@@ -27,7 +27,7 @@ const (
 	NHP_ACC        // agent sends to ac/resource for actual ip access
 	NHP_EXT        // agent requests immediate disconnection
 	//DHP
-	NHP_DRG //DE sends a message to register a data object file to the NHP Server
+	NHP_DRG //DB sends a message to register a data object file to the NHP Server
 	NHP_DAK //NHP-Server sends a result of the NHP_DRG registration request to the DE.
 	NHP_DAR //NHP Agent sends messages to get access to the file and then work with it.
 	NHP_DAG //The NHP Server sends  the authorization status of the data object to NHP Agent.
@@ -53,7 +53,7 @@ var nhpHeaderTypeStrings []string = []string{
 	"NHP-RAK", // server sends back ack when agent registers correctly
 	"NHP-ACC", // agent sends to ac/resource for actual ip access
 	"NHP-EXT", // agent requests immediate disconnection
-	"NHP_DRG", //DE sends a message to register a data object file to the NHP Server
+	"NHP_DRG", //DB sends a message to register a data object file to the NHP Server
 	"NHP_DAK", //NHP-Server sends a result of the NHP_DRG registration request to the DE.
 	"NHP_DAR", //NHP Agent sends messages to get access to the file and then work with it.
 	"NHP_DAG", //The NHP Server sends  the authorization status of the data object to NHP Agent.

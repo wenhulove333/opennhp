@@ -1,4 +1,4 @@
-package de
+package db
 
 import (
 	"bufio"

@@ -1,4 +1,4 @@
-package de
+package db
 
 import (
 	"fmt"
@@ -117,7 +117,7 @@ func (a *UdpDevice) updateServerPeers(file string) (err error) {
 		log.Error("failed to unmarshal server config: %v", err)
 	}
 	for _, p := range peers.Servers {
-		p.Type = core.NHP_DE
+		p.Type = core.NHP_DB
 		a.device.AddPeer(p)
 		serverPeerMap[p.PublicKeyBase64()] = p
 	}

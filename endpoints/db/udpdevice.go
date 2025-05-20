@@ -1,4 +1,4 @@
-package de
+package db
 
 import (
 	"encoding/base64"
@@ -112,11 +112,11 @@ func (a *UdpDevice) Start(dirPath string, logLevel int) (err error) {
 	common.ExeDirPath = dirPath
 	ExeDirPath = dirPath
 	// init logger
-	a.log = log.NewLogger("NHP-DE", logLevel, filepath.Join(ExeDirPath, "logs"), "device")
+	a.log = log.NewLogger("NHP-DB", logLevel, filepath.Join(ExeDirPath, "logs"), "device")
 	log.SetGlobalLogger(a.log)
 
 	log.Info("=========================================================")
-	log.Info("=== NHP-DE %s started                           ===", version.Version)
+	log.Info("=== NHP-DB %s started                           ===", version.Version)
 	log.Info("=== REVISION %s ===", version.CommitId)
 	log.Info("=== RELEASE %s                       ===", version.BuildTime)
 	log.Info("=========================================================")
@@ -132,7 +132,7 @@ func (a *UdpDevice) Start(dirPath string, logLevel int) (err error) {
 		return fmt.Errorf("private key parse error %v", err)
 	}
 
-	a.device = core.NewDevice(core.NHP_DE, prk, nil)
+	a.device = core.NewDevice(core.NHP_DB, prk, nil)
 	if a.device == nil {
 		log.Critical("failed to create device %v\n", err)
 		return fmt.Errorf("failed to create device %v", err)

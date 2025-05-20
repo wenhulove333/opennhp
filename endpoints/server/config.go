@@ -49,7 +49,7 @@ type HttpConfig struct {
 type Peers struct {
 	ACs    []*core.UdpPeer
 	Agents []*core.UdpPeer
-	DEs    []*core.UdpPeer
+	DBs    []*core.UdpPeer
 }
 
 func (s *UdpServer) loadBaseConfig() error {
@@ -422,8 +422,8 @@ func (s *UdpServer) updateDePeers(file string) (err error) {
 	if err := toml.Unmarshal(content, &peers); err != nil {
 		log.Error("failed to unmarshal device peer config: %v", err)
 	}
-	for _, p := range peers.DEs {
-		p.Type = core.NHP_DE
+	for _, p := range peers.DBs {
+		p.Type = core.NHP_DB
 		s.device.AddPeer(p)
 		dePeerMap[p.PublicKeyBase64()] = p
 	}

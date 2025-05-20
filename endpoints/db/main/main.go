@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/OpenNHP/opennhp/endpoints/de"
+    "github.com/OpenNHP/opennhp/endpoints/db"
 	"github.com/OpenNHP/opennhp/nhp/core"
 	"github.com/OpenNHP/opennhp/nhp/version"
 	"github.com/urfave/cli/v2"
@@ -119,7 +119,7 @@ func runApp(mode string, source string, output string, policy string, ztdo strin
 		return err
 	}
 	exeDirPath := filepath.Dir(exeFilePath)
-	a := &de.UdpDevice{}
+	a := &db.UdpDevice{}
 	err = a.Start(exeDirPath, 4)
 	if err != nil {
 		return err
@@ -135,17 +135,17 @@ func runApp(mode string, source string, output string, policy string, ztdo strin
 		fmt.Println("output=" + output)
 		outputFilePath := output
 		policyFile := policy
-		dhpPolicy, err := de.ReadPolicyFile(policyFile)
+		dhpPolicy, err := db.ReadPolicyFile(policyFile)
 		if err != nil {
 			fmt.Printf("failed to read policy file:%s\n", err)
 			return err
 		}
-		ztdoMetainfo, err := de.ReadMetaFile((meta))
+		ztdoMetainfo, err := db.ReadMetaFile((meta))
 		if err != nil {
 			fmt.Printf("failed to read meta file:%s\n", err)
 			return err
 		}
-		zoId, encodedKey := de.EncodeToZtoFile(source, outputFilePath, ztdoMetainfo)
+		zoId, encodedKey := db.EncodeToZtoFile(source, outputFilePath, ztdoMetainfo)
 		if zoId != "" {
 
 			fmt.Printf("Encryption Key for Data Content,key:%s\n", encodedKey)
@@ -163,7 +163,7 @@ func runApp(mode string, source string, output string, policy string, ztdo strin
 		fmt.Println("ztdo=" + ztdo)
 		fmt.Println("decodeKey=" + decodeKey)
 		fmt.Println("output=" + output)
-		de.DecodeZtoFile(ztdo, decodeKey, output)
+		db.DecodeZtoFile(ztdo, decodeKey, output)
 		os.Exit(0)
 	}
 	// block until terminated

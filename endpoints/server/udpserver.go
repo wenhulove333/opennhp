@@ -82,7 +82,7 @@ type UdpServer struct {
 	recvMsgCh <-chan *core.PacketParserData
 	sendMsgCh chan *core.MsgData
 
-	//NHP-DE
+	//NHP-DB
 	dePeerMapMutex sync.Mutex
 	dePeerMap      map[string]*core.UdpPeer // indexed by peer's public key base64 string
 }
@@ -982,7 +982,7 @@ func (us *UdpServer) FindPluginHandler(aspId string) plugins.PluginHandler {
 
 // DHP
 func (s *UdpServer) AddDEPeer(device *core.UdpPeer) {
-	if device.DeviceType() == core.NHP_DE {
+	if device.DeviceType() == core.NHP_DB {
 		s.device.AddPeer(device)
 		s.dePeerMapMutex.Lock()
 		s.dePeerMap[device.PublicKeyBase64()] = device

@@ -107,15 +107,15 @@ func (s *UdpServer) loadPeers() error {
 		s.updateAgentPeers(fileNameAgent)
 	})
 
-	//de.toml
-	fileNameDE := filepath.Join(ExeDirPath, "etc", "de.toml")
-	if err := s.updateDePeers(fileNameDE); err != nil {
+	//db.toml
+	fileNameDB := filepath.Join(ExeDirPath, "etc", "db.toml")
+	if err := s.updateDePeers(fileNameDB); err != nil {
 		// ignore error
 		_ = err
 	}
-	deConfigWatch = utils.WatchFile(fileNameDE, func() {
-		log.Info("device peer config: %s has been updated", fileNameDE)
-		s.updateDePeers(fileNameDE)
+	deConfigWatch = utils.WatchFile(fileNameDB, func() {
+		log.Info("device peer config: %s has been updated", fileNameDB)
+		s.updateDePeers(fileNameDB)
 	})
 	return nil
 }

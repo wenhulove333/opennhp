@@ -23,6 +23,7 @@ var (
 type Config struct {
 	LogLevel            int
 	PrivateKeyBase64    string
+	SymmetricCipherMode string
 	DefaultCipherScheme int `json:"defaultCipherScheme"`
 }
 

@@ -143,12 +143,6 @@ func runDHPApp(ztdo string, output string) error {
 		a.StartKnockLoop()
 	}
 
-	// react to terminate signals
-	termCh := make(chan os.Signal, 1)
-	signal.Notify(termCh, syscall.SIGTERM, os.Interrupt, syscall.SIGABRT)
-
-	// block until terminated
-	<-termCh
 	a.Stop()
 	return nil
 }

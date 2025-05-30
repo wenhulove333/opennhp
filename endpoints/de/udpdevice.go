@@ -468,8 +468,7 @@ func (a *UdpDevice) RemoveServer(serverKey string) {
 
 // get first server
 func (a *UdpDevice) GetServerPeer() (serverPeer *core.UdpPeer) {
-	for key, value := range a.serverPeerMap {
-		fmt.Println("Key:", key, "Value:", value)
+	for _, value := range a.serverPeerMap {
 		serverPeer = value
 		return serverPeer
 	}
@@ -576,11 +575,24 @@ func (a *UdpDevice) SendNHPDRG(server *core.UdpPeer, msg common.DRGMsg) bool {
 		log.Info("SendNHPDRG result：%v", string(dakMsgString))
 		if dakMsg.ErrCode != 0 {
 			log.Error("SendNHPDRG send failed,error:", dakMsg.ErrMsg)
-			fmt.Println("SendNHPDRG send failed,error:" + dakMsg.ErrMsg)
 			return false
 		}
 		return true
 	}()
 	log.Info("SendNHPDRG sent successfully | Returned result:%v", result)
 	return result
+}
+
+func (a *UdpDevice) GetCipherSchema() int {
+	return a.config.DefaultCipherScheme
+}
+
+func (a *UdpDevice) GetOwnEcdh() core.Ecdh {
+	prk, _ := base64.StdEncoding.DecodeString(a.config.PrivateKeyBase64)
+	eccMode := core.ECC_CURVE25519
+	if a.config.DefaultCipherScheme == 1 {
+		eccMode = core.ECC_SM2
+	}
+
+	return core.ECDHFromKey(eccMode, prk)
 }

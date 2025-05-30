@@ -15,6 +15,7 @@ import (
 	"github.com/OpenNHP/opennhp/nhp/core"
 	"github.com/OpenNHP/opennhp/nhp/log"
 	"github.com/OpenNHP/opennhp/nhp/version"
+	ztdolib "github.com/OpenNHP/opennhp/nhp/core/ztdo"
 )
 
 var (
@@ -679,17 +680,19 @@ func (a *UdpAgent) FindServerPeerFromResource(res *KnockResource) *core.UdpPeer 
 ztdo: Ztdo file path
 output: Decrypted file output path
 */
-func (a *UdpAgent) StartDecodeZtdo(ztdo string, output string) {
-	ztdoFile, err := core.ReadZtdoFile(ztdo)
-	if err != nil {
-		log.Error("ReadZtdoFile error,msg:%v", err)
+func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, output string) {
+	ztdo := ztdolib.NewZtdo()
+	if err := ztdo.ParseHeader(ztdoPath); err != nil {
+		fmt.Println("ParseHeader error:", err)
+		return
 	}
-	doId := ztdoFile.Objectid
+
+	doId := ztdo.GetObjectID()
 	darMsg := common.DARMsg{
 		DoId: doId,
 	}
 	serverPeer := a.GetFirstServerPeer()
-	result := a.SendDARMsgToServer(serverPeer, darMsg, ztdo, output)
+	result := a.SendDARMsgToServer(serverPeer, darMsg, ztdoPath, output)
 	if result {
 		fmt.Println("ZTDO File Decryption: Success")
 	} else {
@@ -698,8 +701,7 @@ func (a *UdpAgent) StartDecodeZtdo(ztdo string, output string) {
 }
 
 func (a *UdpAgent) GetFirstServerPeer() (serverPeer *core.UdpPeer) {
-	for key, value := range a.serverPeerMap {
-		fmt.Println("Key:", key, "Value:", value)
+	for _, value := range a.serverPeerMap {
 		serverPeer = value
 		return serverPeer
 	}
@@ -765,7 +767,6 @@ func (a *UdpAgent) SendDARMsgToServer(server *core.UdpPeer, msg common.DARMsg, z
 		log.Info("SendDARMsgToServer response result：%v", dagMsgString)
 		if dagMsg.ErrCode != 0 {
 			log.Error("SendDARMsgToServer send failed,error:", dagMsg.ErrMsg)
-			fmt.Println("SendDARMsgToServer send failed,error:" + dagMsg.ErrMsg)
 			return false, dagMsg
 		}
 		return true, dagMsg
@@ -774,18 +775,13 @@ func (a *UdpAgent) SendDARMsgToServer(server *core.UdpPeer, msg common.DARMsg, z
 		log.Error("File access authorization failed")
 	} else {
 
-		wrappedKey := dagMsg.WrappedKey
-		privateKeyBase64 := a.config.PrivateKeyBase64
-		dataDecodeKey, err := core.SM2Decrypt(privateKeyBase64, wrappedKey)
+		dataDecodeKey := dagMsg.WrappedKey
 
-		if err != nil {
-			log.Error("Key decryption failed:%v", err)
-		}
-
-		cmd := exec.Command(a.config.DHPExeCMD, "run", "--mode=decrypt", "--ztdo="+ztdo, "--output="+output, "--decodeKey="+dataDecodeKey)
+		cmd := exec.Command(a.config.DHPExeCMD, "run", "--mode=decrypt", "--ztdo="+ztdo, "--output="+output, "--decodeKey="+dataDecodeKey, "--providerPublicKey="+a.config.ProviderPublicKeyBase64)
 		cmdResult, err := cmd.CombinedOutput()
 		if err != nil {
 			log.Info("Ztdo file decryption faile%v", err)
+			result = false
 		}
 		log.Info("Ztdo file decryption result:%v", cmdResult)
 	}

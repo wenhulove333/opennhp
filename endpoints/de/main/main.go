@@ -4,13 +4,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 
 	"github.com/OpenNHP/opennhp/endpoints/de"
+	"github.com/OpenNHP/opennhp/nhp/log"
 	"github.com/OpenNHP/opennhp/nhp/core"
 	"github.com/OpenNHP/opennhp/nhp/version"
+	ztdolib "github.com/OpenNHP/opennhp/nhp/core/ztdo"
 	"github.com/urfave/cli/v2"
 )
 
@@ -34,6 +34,7 @@ func initApp() {
 			&cli.StringFlag{Name: "meta", Value: "meta.json", Usage: "meta.json"},
 			&cli.StringFlag{Name: "ztdo", Value: "", Usage: "path to the ztdo file"},
 			&cli.StringFlag{Name: "decodeKey", Value: "", Usage: "decrypt key"},
+			&cli.StringFlag{Name: "providerPublicKey", Value: "", Usage: "provider public key with base64 format"},
 		},
 		Action: func(c *cli.Context) error {
 			mode := c.String("mode")
@@ -43,7 +44,8 @@ func initApp() {
 			ztdo := c.String("ztdo")
 			decodeKey := c.String("decodeKey")
 			meta := c.String("meta")
-			return runApp(mode, source, output, policy, ztdo, decodeKey, meta)
+			providerPublicKeyBase64 := c.String("providerPublicKey")
+			return runApp(mode, source, output, policy, ztdo, decodeKey, meta, providerPublicKeyBase64)
 		},
 	}
 
@@ -81,9 +83,9 @@ func initApp() {
 			if err != nil {
 				return err
 			}
-			cipherType := core.ECC_CURVE25519
-			if c.Bool("sm2") {
-				cipherType = core.ECC_SM2
+			cipherType := core.ECC_SM2
+			if c.Bool("curve") {
+				cipherType = core.ECC_CURVE25519
 			}
 			e := core.ECDHFromKey(cipherType, privKey)
 			if e == nil {
@@ -111,9 +113,7 @@ func initApp() {
 decodeKey:Data Decryption Key
 decodeSavePath:Save Directory Path
 */
-func runApp(mode string, source string, output string, policy string, ztdo string, decodeKey string, meta string) error {
-	fmt.Println("mode=" + mode)
-
+func runApp(mode string, source string, output string, policy string, ztdoFilePath string, decodeKey string, meta string, providerPublicKeyBase64 string) error {
 	exeFilePath, err := os.Executable()
 	if err != nil {
 		return err
@@ -125,49 +125,85 @@ func runApp(mode string, source string, output string, policy string, ztdo strin
 		return err
 	}
 
-	// react to terminate signals
-	termCh := make(chan os.Signal, 1)
-	signal.Notify(termCh, syscall.SIGTERM, os.Interrupt, syscall.SIGABRT)
+	ztdo := ztdolib.NewZtdo()
+	dataMsgPattern := [][]ztdolib.MessagePattern{
+		{ztdolib.MessagePatternS, ztdolib.MessagePatternDHSS},
+		{ztdolib.MessagePatternRS, ztdolib.MessagePatternDHSS},
+	}
 
 	if mode == "encrypt" {
-		fmt.Println("policy=" + policy)
-		fmt.Println("source=" + source)
-		fmt.Println("output=" + output)
 		outputFilePath := output
 		policyFile := policy
 		dhpPolicy, err := de.ReadPolicyFile(policyFile)
 		if err != nil {
-			fmt.Printf("failed to read policy file:%s\n", err)
+			log.Error("failed to read policy file:%s\n", err)
 			return err
 		}
-		ztdoMetainfo, err := de.ReadMetaFile((meta))
-		if err != nil {
-			fmt.Printf("failed to read meta file:%s\n", err)
-			return err
-		}
-		zoId, encodedKey := de.EncodeToZtoFile(source, outputFilePath, ztdoMetainfo)
-		if zoId != "" {
 
-			fmt.Printf("Encryption Key for Data Content,key:%s\n", encodedKey)
-			eccKey, err := core.SM2Encrypt(dhpPolicy.ConsumerPublicKey, encodedKey)
-			if err != nil {
-				fmt.Printf("Data encryption failed：%s\n", err)
-				return err
-			}
-			a.SendDHPRegister(zoId, dhpPolicy, eccKey)
-		} else {
-			fmt.Printf("failed to read source file")
+		ztdo.SetNhpServer(a.GetServerPeer().SendAddr().String())
+		dataKeyPairEccMode := ztdolib.CURVE25519
+		if a.GetCipherSchema() == 0 {
+			dataKeyPairEccMode = ztdolib.SM2
 		}
+
+		dataPrk := ztdo.Generate(dataKeyPairEccMode)
+		dataPrkBase64 := base64.StdEncoding.EncodeToString(dataPrk)
+		//dataPrkBase64 := "sOAcQstGLq6qg6EezrgFlJu+0J61DU2t1TYgYDeS9XE="
+		//dataPrk, _ := base64.StdEncoding.DecodeString(dataPrkBase64)
+		dataPbk := core.ECDHFromKey(dataKeyPairEccMode.ToEccType(), dataPrk).PublicKey()
+		sa := ztdolib.NewSymmetricAgreement(dataKeyPairEccMode, true)
+		sa.SetMessagePatterns(dataMsgPattern)
+
+		sa.SetStaticKeyPair(a.GetOwnEcdh())
+		sa.SetRemoteStaticPublicKey(dataPbk)
+
+		gcmKey, ad :=sa.AgreeSymmetricKey()
+
+		symmetricCipherMode, err := ztdolib.NewSymmetricCipherMode(a.GetSymmetricCipherMode())
+		if err != nil {
+			log.Error("failed to create symmetric cipher mode:%s\n", err)
+			return err
+		}
+		ztdo.SetCipherConfig(true, symmetricCipherMode, dataKeyPairEccMode)
+		zoId := ztdo.GetObjectID()
+
+		log.Info("Encrypt ztdo file(file name: %s and ztdo id: %s) with cipher settings: ECC mode(%s) and Symmetric Cipher Mode(%s)\n", source, zoId, dataKeyPairEccMode, symmetricCipherMode)
+
+		if err := ztdo.EncryptZtdoFile(source, outputFilePath, gcmKey[:], ad); err != nil {
+			log.Error("failed to encrypt ztdo file: %s\n", err)
+			return err
+		}
+
+		a.SendDHPRegister(zoId, dhpPolicy, dataPrkBase64)
+
 		os.Exit(0)
 	} else if mode == "decrypt" {
-		fmt.Println("ztdo=" + ztdo)
-		fmt.Println("decodeKey=" + decodeKey)
-		fmt.Println("output=" + output)
-		de.DecodeZtoFile(ztdo, decodeKey, output)
+		if err := ztdo.ParseHeader(ztdoFilePath); err != nil {
+			log.Error("failed to parse ztdo header:%s\n", err)
+			os.Exit(1)
+		}
+
+		dataKeyPairEccMode := ztdo.GetECCMode()
+
+		dataPrk, _ := base64.StdEncoding.DecodeString(decodeKey)
+		sa := ztdolib.NewSymmetricAgreement(dataKeyPairEccMode, false)
+		sa.SetMessagePatterns(dataMsgPattern)
+		sa.SetStaticKeyPair(core.ECDHFromKey(dataKeyPairEccMode.ToEccType(), dataPrk))
+
+		providerPublicKey, _ := base64.StdEncoding.DecodeString(providerPublicKeyBase64)
+		sa.SetRemoteStaticPublicKey(providerPublicKey)
+
+		gcmKey, ad := sa.AgreeSymmetricKey()
+
+		log.Info("Decrypting ztdo file(file name: %s and ztdo id: %s) with cipher settings: ECC mode(%s) and Symmetric Cipher Mode(%s)\n", ztdoFilePath, ztdo.GetObjectID(), dataKeyPairEccMode, ztdo.GetCipherMode())
+
+		if err := ztdo.DecryptZtdoFile(ztdoFilePath, output, gcmKey[:], ad); err != nil {
+			log.Error("failed to decrypt ztdo file:%s\n", err)
+			os.Exit(1)
+		}
+
 		os.Exit(0)
 	}
-	// block until terminated
-	<-termCh
-	a.Stop()
+
 	return nil
 }

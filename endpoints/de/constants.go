@@ -6,4 +6,9 @@ const (
 	PacketQueueSizePerConnection = 64        // nhp de does not need large transactions
 	DoType_Default               = "ZTDO"    //The DHP protocol enforces encryption by default, and its core data unit is the Zero Trust Data Object (ZTDO)。
 	DoType_Other                 = "OTHER"
+
+	ReportToServerInterval         = 60 // seconds
+	MinialServerDiscoveryInterval  = 5  // seconds
+	ServerKeepaliveInterval        = 20 // seconds
+	ServerDiscoveryRetryBeforeFail = 3
 )

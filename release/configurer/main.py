@@ -1,4 +1,5 @@
 import argparse
+import platform
 import re
 import subprocess
 import tomlkit
@@ -50,13 +51,18 @@ class ECCKeyGen():
 
 class Base():
     def __init__(self, path):
+        self._path = path
         with open(path, mode="rt", encoding="utf-8") as fp:
             self._config = tomlkit.load(fp)
+
+    def ExtraConfig(self, key, value):
+        self._config[key] = value
+        with open(self._path, mode="wt", encoding="utf-8") as fp:
+            tomlkit.dump(self._config, fp)
 
 class Config(Base):
     def __init__(self, path):
         super().__init__(path)
-        self._path = path
         self._keygen = ECCKeyGen()
         self._config["PrivateKeyBase64"] = self._keygen.PrivateKeyBase64
         # save back to file
@@ -70,11 +76,6 @@ class Config(Base):
     @property
     def PublicKeyBase64(self):
         return self._keygen.PublicKeyBase64
-
-    def ExtraConfig(self, key, value):
-        self._config[key] = value
-        with open(self._path, mode="wt", encoding="utf-8") as fp:
-            tomlkit.dump(self._config, fp)
 
 class Server(Base):
     def __init__(self, path, server):
@@ -95,14 +96,29 @@ class Client(Base):
         with open(path, mode="wt", encoding="utf-8") as fp:
             tomlkit.dump(self._config, fp)
 
+class Consumer(Base):
+    def __init__(self, path, agent):
+        super().__init__(path)
+        self._agent = agent
+        self._config["Consumers"][0]["ConsumerPublicKeyBase64"] = self._agent.PublicKeyBase64
+        with open(path, mode="wt", encoding="utf-8") as fp:
+            tomlkit.dump(self._config, fp)
+    def ExtraConfig(self, key, value):
+        self._config["Consumers"][0][key] = value
+        with open(self._path, mode="wt", encoding="utf-8") as fp:
+            tomlkit.dump(self._config, fp)
+
 class Configurer():
     def __init__(self, release_path):
         self._release_path = release_path
         self._server = Config(self._release_path + "/nhp-server/etc/config.toml")
         self._agent = Config(self._release_path + "/nhp-agent/etc/config.toml")
+        teeKeyGen = ECCKeyGen()
+        self._agent.ExtraConfig("TEEPrivateKeyBase64", teeKeyGen.PrivateKeyBase64)
         self._de = Config(self._release_path + "/nhp-de/etc/config.toml")
         self._ac = Config(self._release_path + "/nhp-ac/etc/config.toml")
-        self._agent.ExtraConfig("ProviderPublicKeyBase64", self._de.PublicKeyBase64)
+        if platform.system() != "Windows":
+            self._agent.ExtraConfig("DHPExeCMD", "../nhp-de/nhp-de")
 
         self._agent_server = Server(self._release_path + "/nhp-agent/etc/server.toml", self._server)
         self._de_server = Server(self._release_path + "/nhp-de/etc/server.toml", self._server)
@@ -111,6 +127,9 @@ class Configurer():
         self._server_agent = Client(self._release_path + "/nhp-server/etc/agent.toml", self._agent, "Agents")
         self._server_de = Client(self._release_path + "/nhp-server/etc/de.toml", self._de, "DEs")
         self._server_ac = Client(self._release_path + "/nhp-server/etc/ac.toml", self._ac, "ACs")
+
+        self._consumer = Consumer(self._release_path + "/nhp-de/etc/consumer.toml", self._agent)
+        self._consumer.ExtraConfig("TEEPublicKeyBase64", teeKeyGen.PublicKeyBase64)
 
 
 def main():

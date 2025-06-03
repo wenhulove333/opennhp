@@ -3,6 +3,8 @@ package ztdo
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/emmansun/gmsm/sm4"
@@ -11,8 +13,7 @@ import (
 )
 
 const  (
-	InitialDHPChainKeyString = "DHP keygen"
-	InitialDHPHashString = "DHP hashgen"
+	InitialDHPKeyWrappingString = "DHP Data Private Key Wrapping"
 )
 
 // Data Key Pair generation interface
@@ -383,6 +384,55 @@ func (sa *SymmetricAgreement) AgreeSymmetricKey() (gcmKey [core.SymmetricKeySize
 	}
 
 	ad = adHash.Sum(nil)
+
+	return
+}
+
+
+var DataPrivateKeyWrappingPatterns = [][]MessagePattern{
+	{MessagePatternDHSS, MessagePatternS, MessagePatternDHSE},
+	{MessagePatternDHSS, MessagePatternRS, MessagePatternDHES},
+}
+
+type DataPrivateKeyWrapping struct {
+	ProviderPublicKeyBase64 string `json:"providerPublicKeyBase64"`
+	IvBase64                string `json:"ivBase64"`
+	PrkWrapping             string `json:"prkWrapping"`
+}
+
+func NewDataPrivateKeyWrapping(providerPublicKeyBase64 string, dataPrivateKeyBase64 string, key, ad []byte) *DataPrivateKeyWrapping {
+	symmetricCipherMode := AES256GCM128Tag
+	var Iv [core.GCMNonceSize]byte
+	rand.Read(Iv[:])
+
+	cipherText, _ := symmetricCipherMode.Encrypt(key, Iv[:], []byte(dataPrivateKeyBase64), ad)
+
+	return &DataPrivateKeyWrapping{
+		ProviderPublicKeyBase64: providerPublicKeyBase64,
+		IvBase64:                base64.StdEncoding.EncodeToString(Iv[:]),
+		PrkWrapping:             base64.StdEncoding.EncodeToString(cipherText),
+	}
+}
+
+func (d *DataPrivateKeyWrapping) Unwrap(key, ad []byte) (dataPrivateKeyBase64 string, err error) {
+	symmetricCipherMode := AES256GCM128Tag
+
+	Iv, err := base64.StdEncoding.DecodeString(d.IvBase64)
+	if err != nil {
+		return
+	}
+
+	cipherText, err := base64.StdEncoding.DecodeString(d.PrkWrapping)
+	if err != nil {
+		return
+	}
+
+	dataPrk, err := symmetricCipherMode.Decrypt(key, Iv, cipherText, ad)
+	if err != nil {
+		return
+	}
+
+	dataPrivateKeyBase64 = string(dataPrk)
 
 	return
 }

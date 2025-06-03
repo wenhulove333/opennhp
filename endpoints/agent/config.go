@@ -25,7 +25,7 @@ type Config struct {
 	DefaultCipherScheme int    `json:"defaultCipherScheme"`
 	PrivateKeyBase64    string `json:"privateKey"`
 	KnockUser           `mapstructure:",squash"`
-	ProviderPublicKeyBase64 string `json:"providerPublicKey"`
+	TEEPrivateKeyBase64 string `json:"teePrivateKeyBase64"`
 	DHPExeCMD           string
 }
 

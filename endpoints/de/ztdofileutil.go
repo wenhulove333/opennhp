@@ -224,24 +224,24 @@ func readZtoFile(filePath string) (core.ZtdoFile, error) {
 }
 
 // read Polic file
-func ReadPolicyFile(filePath string) (common.DHPPolicy, error) {
+func ReadPolicyFile(filePath string) (common.SmartPolicy, error) {
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return common.DHPPolicy{}, fmt.Errorf("could not open file: %v", err)
+		return common.SmartPolicy{}, fmt.Errorf("could not open file: %v", err)
 	}
 	defer file.Close()
 
 	fileContentByte, err := io.ReadAll(file)
 	if err != nil {
-		return common.DHPPolicy{}, fmt.Errorf("error reading file: %v", err)
+		return common.SmartPolicy{}, fmt.Errorf("error reading file: %v", err)
 	}
 
-	var config common.DHPPolicy
+	var config common.SmartPolicy
 
 	err = json.Unmarshal(fileContentByte, &config)
 	if err != nil {
-		return common.DHPPolicy{}, fmt.Errorf("json parsing error: %s", err)
+		return common.SmartPolicy{}, fmt.Errorf("json parsing error: %s", err)
 	}
 	return config, nil
 }

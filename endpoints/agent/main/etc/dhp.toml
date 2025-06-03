@@ -1,0 +1,9 @@
+# DHP related key Configuration
+
+# ConsumerPrivateKeyBase64: base64 encoded private key of data consumer
+# TEEPrivateKeyBase64: base64 encoded private key of TEE (Trusted Execution Environment)
+# ProviderPublicKeyBase64:  base64 encoded public key of data provider
+ConsumerPrivateKeyBase64 = "6INImrvDNS8e52vPZ8gRNct6awu4gxNvi6Q8sW0QfTM="
+TEEPrivateKeyBase64 = "jhsQI6NgqOM94c7P848zxMrOWdixxrUtAK7vePoQFM4="
+ProviderPublicKeyBase64 = "CtxNuy7lJ1mJgjqWplcwN8dZhXhSNPhECja1A0OWKa+2wtI7xuB3jPcamogGZGBBfQ4SqnoPGLA7zRQaAotoxg=="
+DHPExeCMD = "..\\nhp-de\\nhp-de.exe"

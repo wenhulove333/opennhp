@@ -3,14 +3,19 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"slices"
+	"syscall"
 
 	"github.com/OpenNHP/opennhp/endpoints/de"
-	"github.com/OpenNHP/opennhp/nhp/log"
+	"github.com/OpenNHP/opennhp/nhp/common"
 	"github.com/OpenNHP/opennhp/nhp/core"
-	"github.com/OpenNHP/opennhp/nhp/version"
 	ztdolib "github.com/OpenNHP/opennhp/nhp/core/ztdo"
+	"github.com/OpenNHP/opennhp/nhp/log"
+	"github.com/OpenNHP/opennhp/nhp/version"
 	"github.com/urfave/cli/v2"
 )
 
@@ -28,24 +33,63 @@ func initApp() {
 		Usage: "create and run device process for NHP protocol",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "mode", Value: "none", Usage: "encrypt;decrypt"},
-			&cli.StringFlag{Name: "source", Value: "sample.txt", Usage: "source file"},
-			&cli.StringFlag{Name: "policy", Value: "policyinfo.json", Usage: "The policy file contains the public key information of the data accessor"},
-			&cli.StringFlag{Name: "output", Value: "output.txt", Usage: "Save path of the ztdo file"},
-			&cli.StringFlag{Name: "meta", Value: "meta.json", Usage: "meta.json"},
+			&cli.StringFlag{Name: "source", Value: "", Usage: "source file to be encrypted, this is not required for streaming mode"},
+			&cli.StringFlag{Name: "dataSourceType", Value: "", Usage: "type of data source, the default value is online, supported values are online, offline and stream"},
+			&cli.StringFlag{Name: "smartPolicy", Value: "smart.policy.json", Usage: "The wasm policy file"},
+			&cli.StringFlag{Name: "output", Value: "output.txt", Usage: "Save path of the ztdo file or decrypted file"},
+			&cli.StringFlag{Name: "accessUrl", Value: "", Usage: "ZTDO access url for online or offline mode or API url for streaming mode"},
 			&cli.StringFlag{Name: "ztdo", Value: "", Usage: "path to the ztdo file"},
-			&cli.StringFlag{Name: "decodeKey", Value: "", Usage: "decrypt key"},
+			&cli.StringFlag{Name: "dataPrivateKey", Value: "", Usage: "data private key with base64 format"},
 			&cli.StringFlag{Name: "providerPublicKey", Value: "", Usage: "provider public key with base64 format"},
+		},
+		Before: func(c *cli.Context) error {
+			if c.String("mode") == "encrypt" {
+				if c.String("dataSourceType") == "" {
+					return fmt.Errorf("dataSourceType is required in encrypt mode")
+				} else {
+					if !slices.Contains([]string{"online", "offline", "stream"}, c.String("dataSourceType")) {
+						return fmt.Errorf("invalid dataSourceType")
+					}
+
+					if c.String("dataSourceType") != "stream" {
+						if c.String("source") == "" {
+							return fmt.Errorf("source is required when dataSourceType is not stream")
+						}
+					} else {
+						if c.String("accessUrl") == "" {
+							return fmt.Errorf("accessUrl is required when dataSourceType is stream")
+						}
+					}
+				}
+
+				if c.String("ztdo") != "" || c.String("dataPrivateKey") != "" || c.String("providerPublicKey") != "" {
+					return fmt.Errorf("ztdo, dataPrivateKey and providerPublicKey are only allowed in decrypt mode")
+				}
+			} else if c.String("mode") == "decrypt" {
+				if c.String("source") != "" || c.String("smartPolicy") != "" || c.String("accessUrl") != "" {
+					return fmt.Errorf("source, smartPolicy and accessUrl are only allowed in encrypt mode")
+				}
+
+				if c.String("ztdo") == "" || c.String("output") == "" || c.String("dataPrivateKey") == "" || c.String("providerPublicKey") == "" {
+					return fmt.Errorf("ztdo, output, dataPrivateKey and providerPublicKey are required in decrypt mode")
+				}
+			} else {
+				return nil
+			}
+
+			return nil
 		},
 		Action: func(c *cli.Context) error {
 			mode := c.String("mode")
 			source := c.String("source")
-			policy := c.String("policy")
+			dsType := c.String("dataSourceType")
+			smartPolicy := c.String("smartPolicy")
 			output := c.String("output")
 			ztdo := c.String("ztdo")
-			decodeKey := c.String("decodeKey")
-			meta := c.String("meta")
+			dataPrivateKey := c.String("dataPrivateKey")
+			accessUrl := c.String("accessUrl")
 			providerPublicKeyBase64 := c.String("providerPublicKey")
-			return runApp(mode, source, output, policy, ztdo, decodeKey, meta, providerPublicKeyBase64)
+			return runApp(mode, source, dsType, output, smartPolicy, ztdo, dataPrivateKey, accessUrl, providerPublicKeyBase64)
 		},
 	}
 
@@ -113,7 +157,7 @@ func initApp() {
 decodeKey:Data Decryption Key
 decodeSavePath:Save Directory Path
 */
-func runApp(mode string, source string, output string, policy string, ztdoFilePath string, decodeKey string, meta string, providerPublicKeyBase64 string) error {
+func runApp(mode string, source string, dsType string, output string, smartPolicy string, ztdoFilePath string, dataPrivateKeyBase64 string, accessUrl string, providerPublicKeyBase64 string) error {
 	exeFilePath, err := os.Executable()
 	if err != nil {
 		return err
@@ -125,56 +169,87 @@ func runApp(mode string, source string, output string, policy string, ztdoFilePa
 		return err
 	}
 
+	if mode == "none" {
+		termCh := make(chan os.Signal, 1)
+		signal.Notify(termCh, syscall.SIGTERM, os.Interrupt, syscall.SIGABRT)
+
+		// block until terminated
+		<-termCh
+		a.Stop()
+
+		return nil
+	}
+
 	ztdo := ztdolib.NewZtdo()
 	dataMsgPattern := [][]ztdolib.MessagePattern{
 		{ztdolib.MessagePatternS, ztdolib.MessagePatternDHSS},
 		{ztdolib.MessagePatternRS, ztdolib.MessagePatternDHSS},
 	}
 
+	dataKeyPairEccMode := ztdolib.CURVE25519
+	if a.GetCipherSchema() == 0 {
+		dataKeyPairEccMode = ztdolib.SM2
+	}
+
+	dataPrk := ztdo.Generate(dataKeyPairEccMode)
+	base64.StdEncoding.EncodeToString(dataPrk)
+
+	SaveDataPrivateKeyBase64(ztdo.GetObjectID(), base64.StdEncoding.EncodeToString(dataPrk))
+
 	if mode == "encrypt" {
 		outputFilePath := output
-		policyFile := policy
-		dhpPolicy, err := de.ReadPolicyFile(policyFile)
+		policyFile := smartPolicy
+		smartPolicy, err := de.ReadPolicyFile(policyFile)
 		if err != nil {
 			log.Error("failed to read policy file:%s\n", err)
 			return err
 		}
 
-		ztdo.SetNhpServer(a.GetServerPeer().SendAddr().String())
-		dataKeyPairEccMode := ztdolib.CURVE25519
-		if a.GetCipherSchema() == 0 {
-			dataKeyPairEccMode = ztdolib.SM2
+		if !(dsType == "stream") {
+			if dsType == "online" {
+				ztdo.SetNhpServer(a.GetServerPeer().SendAddr().String())
+			} else { // offline
+				ztdo.SetNhpServer("")
+			}
+
+			dataPbk := core.ECDHFromKey(dataKeyPairEccMode.ToEccType(), dataPrk).PublicKey()
+			sa := ztdolib.NewSymmetricAgreement(dataKeyPairEccMode, true)
+			sa.SetMessagePatterns(dataMsgPattern)
+
+			sa.SetStaticKeyPair(a.GetOwnEcdh())
+			sa.SetRemoteStaticPublicKey(dataPbk)
+
+			gcmKey, ad :=sa.AgreeSymmetricKey()
+
+			symmetricCipherMode, err := ztdolib.NewSymmetricCipherMode(a.GetSymmetricCipherMode())
+			if err != nil {
+				log.Error("failed to create symmetric cipher mode:%s\n", err)
+				return err
+			}
+			ztdo.SetCipherConfig(true, symmetricCipherMode, dataKeyPairEccMode)
+			zoId := ztdo.GetObjectID()
+
+			log.Info("Encrypt ztdo file(file name: %s and ztdo id: %s) with cipher settings: ECC mode(%s) and Symmetric Cipher Mode(%s)\n", source, zoId, dataKeyPairEccMode, symmetricCipherMode)
+
+			if err := ztdo.EncryptZtdoFile(source, outputFilePath, gcmKey[:], ad); err != nil {
+				log.Error("failed to encrypt ztdo file: %s\n", err)
+				return err
+			}
 		}
 
-		dataPrk := ztdo.Generate(dataKeyPairEccMode)
-		dataPrkBase64 := base64.StdEncoding.EncodeToString(dataPrk)
-		//dataPrkBase64 := "sOAcQstGLq6qg6EezrgFlJu+0J61DU2t1TYgYDeS9XE="
-		//dataPrk, _ := base64.StdEncoding.DecodeString(dataPrkBase64)
-		dataPbk := core.ECDHFromKey(dataKeyPairEccMode.ToEccType(), dataPrk).PublicKey()
-		sa := ztdolib.NewSymmetricAgreement(dataKeyPairEccMode, true)
-		sa.SetMessagePatterns(dataMsgPattern)
+		if dsType != "offline" {
+			drgMsg := common.DRGMsg{
+				DoType: de.DoType_Default,
+				DoId:   ztdo.GetObjectID(),
+				DbId:   a.GetDataBrokerId(),
+				DataSourceType: dsType,
+				AccessUrl: accessUrl,
+				AccessByNHP: false,
+				Spo: smartPolicy,
+			}
 
-		sa.SetStaticKeyPair(a.GetOwnEcdh())
-		sa.SetRemoteStaticPublicKey(dataPbk)
-
-		gcmKey, ad :=sa.AgreeSymmetricKey()
-
-		symmetricCipherMode, err := ztdolib.NewSymmetricCipherMode(a.GetSymmetricCipherMode())
-		if err != nil {
-			log.Error("failed to create symmetric cipher mode:%s\n", err)
-			return err
+			a.SendDHPRegister(drgMsg)
 		}
-		ztdo.SetCipherConfig(true, symmetricCipherMode, dataKeyPairEccMode)
-		zoId := ztdo.GetObjectID()
-
-		log.Info("Encrypt ztdo file(file name: %s and ztdo id: %s) with cipher settings: ECC mode(%s) and Symmetric Cipher Mode(%s)\n", source, zoId, dataKeyPairEccMode, symmetricCipherMode)
-
-		if err := ztdo.EncryptZtdoFile(source, outputFilePath, gcmKey[:], ad); err != nil {
-			log.Error("failed to encrypt ztdo file: %s\n", err)
-			return err
-		}
-
-		a.SendDHPRegister(zoId, dhpPolicy, dataPrkBase64)
 
 		os.Exit(0)
 	} else if mode == "decrypt" {
@@ -185,7 +260,7 @@ func runApp(mode string, source string, output string, policy string, ztdoFilePa
 
 		dataKeyPairEccMode := ztdo.GetECCMode()
 
-		dataPrk, _ := base64.StdEncoding.DecodeString(decodeKey)
+		dataPrk, _ := base64.StdEncoding.DecodeString(dataPrivateKeyBase64)
 		sa := ztdolib.NewSymmetricAgreement(dataKeyPairEccMode, false)
 		sa.SetMessagePatterns(dataMsgPattern)
 		sa.SetStaticKeyPair(core.ECDHFromKey(dataKeyPairEccMode.ToEccType(), dataPrk))
@@ -206,4 +281,50 @@ func runApp(mode string, source string, output string, policy string, ztdoFilePa
 	}
 
 	return nil
+}
+
+func SaveDataPrivateKeyBase64(doId string, dataPrivateKeyBase64 string) error {
+	// Make sure the etc directory exists
+	etcDir := "etc/ztdo"
+	if err := os.MkdirAll(etcDir, 0755); err != nil {
+		return fmt.Errorf("failed to create etc directory: %v", err)
+	}
+
+	// Check if etc/config.json already exists
+	fileName := "data-" + doId + ".json"
+	fullPath := filepath.Join(etcDir, fileName)
+	if _, err := os.Stat(fullPath); err == nil {
+		return fmt.Errorf("%v already exists, please delete it first", fullPath)
+	}
+
+	// Create etc/config.json file
+	file, err := os.Create(fullPath)
+	if err != nil {
+		return fmt.Errorf("failed to create config.json: %v", err)
+	}
+	defer file.Close()
+
+	file.Write([]byte(dataPrivateKeyBase64))
+
+	return nil
+}
+
+func GetDataPrivateKeyBase64(doId string) (string, error) {
+	etcDir := "etc/ztdo"
+	fileName := "data-" + doId + ".json"
+
+	fullPath := filepath.Join(etcDir, fileName)
+
+	// open and read all the content in file
+	file, err := os.Open(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open config.json: %v", err)
+	}
+
+	fileContentByte, err := io.ReadAll(file)
+	if err != nil {
+		return "", fmt.Errorf("error reading file: %v", err)
+	}
+
+	return string(fileContentByte), nil
 }

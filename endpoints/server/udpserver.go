@@ -55,6 +55,9 @@ type UdpServer struct {
 	acPeerMapMutex sync.Mutex
 	acPeerMap      map[string]*core.UdpPeer // indexed by peer's public key base64 string
 
+	dbConnectionMapMutex sync.Mutex
+	dbConnectionMap      map[string]*DBConn // ac connection is indexed by remote IP address
+
 	tokenStoreMutex sync.Mutex
 	tokenStore      TokenStore
 
@@ -95,6 +98,7 @@ type BlockAddr struct {
 type UdpConn struct {
 	ConnData       *core.ConnectionData
 	isACConnection bool // Immutable. Don't change it after creation. Conn object is also stored in acConnectionMap which is indexed by ACId
+	isDBConnection bool // Immutable. Don't change it after creation. Conn object is also stored in dbConnectionMap which is indexed by DBId
 }
 
 type ACConn struct {
@@ -104,6 +108,13 @@ type ACConn struct {
 	ACId           string
 	ServiceId      string
 	Apps           []string
+}
+
+type DBConn struct {
+	ConnData       *core.ConnectionData
+	DBPeer         *core.UdpPeer
+	DBCipherScheme int
+	DBId           string
 }
 
 func (c *UdpConn) Close() {
@@ -197,6 +208,7 @@ func (s *UdpServer) Start(dirPath string, logLevel int) (err error) {
 
 	s.remoteConnectionMap = make(map[string]*UdpConn)
 	s.acConnectionMap = make(map[string]*ACConn)
+	s.dbConnectionMap = make(map[string]*DBConn)
 	s.tokenStore = make(TokenStore)
 	s.blockAddrMap = make(map[string]*BlockAddr)
 	s.signals.stop = make(chan struct{})
@@ -358,8 +370,10 @@ func (s *UdpServer) recvPacketRoutine() {
 			s.remoteConnectionMapMutex.Unlock()
 
 			isACConn := pkt.HeaderType == core.NHP_AOL
+			isDBConn := pkt.HeaderType == core.NHP_DOL
 			conn = &UdpConn{
 				isACConnection: isACConn,
+				isDBConnection: isDBConn,
 			}
 			// setup new routine for connection
 			conn.ConnData = &core.ConnectionData{
@@ -381,6 +395,10 @@ func (s *UdpServer) recvPacketRoutine() {
 			if conn.isACConnection {
 				conn.ConnData.TimeoutMs = DefaultACConnectionTimeoutMs
 				log.Debug("Received new ac connection from %s", addrStr)
+			}
+			if conn.isDBConnection {
+				conn.ConnData.TimeoutMs = DefaultDBConnectionTimeoutMs
+				log.Debug("Received new db connection from %s", addrStr)
 			}
 			s.remoteConnectionMapMutex.Lock()
 			s.remoteConnectionMap[addrStr] = conn
@@ -422,6 +440,19 @@ func (s *UdpServer) connectionRoutine(conn *UdpConn) {
 			}
 			delete(s.acConnectionMap, acToDelete)
 			s.acConnectionMapMutex.Unlock()
+		}
+
+		if conn.isDBConnection {
+			var dbToDelete string
+			s.dbConnectionMapMutex.Lock()
+			for dbId, dbConn := range s.dbConnectionMap {
+				if dbConn.ConnData.Equal(conn.ConnData) {
+					dbToDelete = dbId
+					break
+				}
+			}
+			delete(s.dbConnectionMap, dbToDelete)
+			s.dbConnectionMapMutex.Unlock()
 		}
 
 		// remove the udp conn from remoteConnectionMap
@@ -610,6 +641,9 @@ func (s *UdpServer) recvMessageRoutine() {
 			case core.NHP_AOL:
 				// synchronously block and deal with NHP_DOL to ensure future ac messages will be correctly processed. Don't use go routine
 				s.HandleACOnline(ppd)
+
+			case core.NHP_DOL:
+				s.HandleDBOnline(ppd)
 
 			case core.NHP_OTP:
 				go s.HandleOTPRequest(ppd)

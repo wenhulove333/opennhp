@@ -33,6 +33,8 @@ const (
 	NHP_DAG //The NHP Server sends  the authorization status of the data object to NHP Agent.
 	NHP_DPC //The NHP Server sends a policy validation challenge to the NHP Agent
 	NHP_DPV //The NHP Agent sends the policy validation proof to the NHP Server.
+	NHP_DOL //DB sends online status to server
+	NHP_DBA //server send ack to db after receiving db's online status
 )
 
 var nhpHeaderTypeStrings []string = []string{
@@ -59,6 +61,8 @@ var nhpHeaderTypeStrings []string = []string{
 	"NHP_DAG", //The NHP Server sends  the authorization status of the data object to NHP Agent.
 	"NHP_DPC", //The NHP Server sends a policy validation challenge to the NHP Agent
 	"NHP_DPV", //The NHP Agent sends the policy validation proof to the NHP Server.
+	"NHP_DOL", //DB sends online status to server
+	"NHP_DBA", //server send ack to db after receiving db's online status
 }
 
 func HeaderTypeToString(t int) string {
@@ -72,7 +76,7 @@ func HeaderTypeToDeviceType(t int) int {
 	switch t {
 	case NHP_KNK, NHP_LST, NHP_RKN, NHP_OTP, NHP_REG, NHP_ACC, NHP_EXT, NHP_DAR:
 		return NHP_AGENT
-	case NHP_ACK, NHP_AOP, NHP_LRT, NHP_COK, NHP_AAK, NHP_RAK, NHP_DAK, NHP_DAG:
+	case NHP_ACK, NHP_AOP, NHP_LRT, NHP_COK, NHP_AAK, NHP_RAK, NHP_DAK, NHP_DAG, NHP_DBA:
 		return NHP_SERVER
 
 	case NHP_AOL, NHP_ART:
@@ -80,7 +84,7 @@ func HeaderTypeToDeviceType(t int) int {
 
 	case NHP_RLY:
 		return NHP_RELAY
-	case NHP_DRG:
+	case NHP_DRG, NHP_DOL:
 		return NHP_DE
 	}
 
@@ -175,7 +179,7 @@ func (d *Device) CheckRecvHeaderType(t int) bool {
 		}
 	case NHP_SERVER:
 		switch t {
-		case NHP_REG, NHP_KNK, NHP_LST, NHP_RKN, NHP_EXT, NHP_ART, NHP_RLY, NHP_AOL, NHP_OTP, NHP_DRG, NHP_DAR:
+		case NHP_REG, NHP_KNK, NHP_LST, NHP_RKN, NHP_EXT, NHP_ART, NHP_RLY, NHP_AOL, NHP_OTP, NHP_DRG, NHP_DAR, NHP_DOL:
 			return true
 		}
 	case NHP_AC:
@@ -191,7 +195,7 @@ func (d *Device) CheckRecvHeaderType(t int) bool {
 
 	case NHP_DE:
 		switch t {
-		case NHP_DRG, NHP_DAG, NHP_DAK, NHP_DPC, NHP_DPV:
+		case NHP_DRG, NHP_DAG, NHP_DAK, NHP_DPC, NHP_DPV, NHP_DBA:
 			return true
 		}
 	}

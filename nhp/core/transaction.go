@@ -36,7 +36,7 @@ func (d *Device) IsTransactionRequest(t int) bool {
 		}
 	case NHP_SERVER:
 		switch t {
-		case NHP_REG, NHP_LST, NHP_KNK, NHP_RKN, NHP_EXT, NHP_AOL, NHP_AOP, NHP_DAK, NHP_DAG, NHP_DAR, NHP_DRG:
+		case NHP_REG, NHP_LST, NHP_KNK, NHP_RKN, NHP_EXT, NHP_AOL, NHP_AOP, NHP_DAK, NHP_DAG, NHP_DAR, NHP_DRG, NHP_DOL:
 			return true
 		}
 	case NHP_AC:
@@ -46,7 +46,7 @@ func (d *Device) IsTransactionRequest(t int) bool {
 		}
 	case NHP_DE:
 		switch t {
-		case NHP_DRG:
+		case NHP_DRG, NHP_DOL:
 			return true
 		}
 	case NHP_RELAY:
@@ -101,7 +101,7 @@ func (d *Device) IsTransactionResponse(t int) bool {
 		}
 	case NHP_DE:
 		switch t {
-		case NHP_DAK:
+		case NHP_DAK, NHP_DBA:
 			return true
 		}
 	case NHP_RELAY:

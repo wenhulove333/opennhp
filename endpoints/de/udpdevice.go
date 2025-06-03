@@ -79,6 +79,9 @@ type UdpDevice struct {
 	serverPeerMutex sync.Mutex
 	serverPeerMap   map[string]*core.UdpPeer // indexed by server's public key
 
+	consumerMutex sync.Mutex
+	consumerMap  map[string]*Consumer // indexed by consumer's identifier
+
 	device  *core.Device
 	wg      sync.WaitGroup
 	running atomic.Bool
@@ -90,13 +93,13 @@ type UdpDevice struct {
 
 	recvMsgCh <-chan *core.PacketParserData
 	sendMsgCh chan *core.MsgData
-	// one device should serve only one specific user at a time
-	registerUserMutex sync.RWMutex
 }
 
 type UdpConn struct {
 	ConnData *core.ConnectionData
 	netConn  *net.UDPConn
+	connected    atomic.Bool
+	externalAddr string
 }
 
 func (c *UdpConn) Close() {
@@ -144,6 +147,9 @@ func (a *UdpDevice) Start(dirPath string, logLevel int) (err error) {
 	// load peers
 	a.loadPeers()
 
+	// load consumers
+	a.loadConsumers()
+
 	a.signals.stop = make(chan struct{})
 	a.signals.serverMapUpdated = make(chan struct{}, 1)
 	a.recvMsgCh = a.device.DecryptedMsgQueue
@@ -153,10 +159,11 @@ func (a *UdpDevice) Start(dirPath string, logLevel int) (err error) {
 	a.device.Start()
 
 	// start device routines
-	a.wg.Add(2)
+	a.wg.Add(3)
 
 	go a.sendMessageRoutine()
 	go a.recvMessageRoutine()
+	go a.maintainServerConnectionRoutine()
 	a.running.Store(true)
 	// time.Sleep(1000 * time.Millisecond)
 	return nil
@@ -170,6 +177,8 @@ func (a *UdpDevice) Stop() {
 	a.StopConfigWatch()
 	a.wg.Wait()
 	close(a.sendMsgCh)
+	close(a.signals.serverMapUpdated)
+
 	log.Info("=========================")
 	log.Info("=== NHP-Device stopped ===")
 	log.Info("=========================")
@@ -451,6 +460,190 @@ func (a *UdpDevice) recvMessageRoutine() {
 	}
 }
 
+func (a *UdpDevice) maintainServerConnectionRoutine() {
+	defer a.wg.Done()
+	defer log.Info("maintainServerConnectionRoutine stopped")
+
+	log.Info("maintainServerConnectionRoutine started")
+
+
+	var discoveryRoutineWg sync.WaitGroup
+	defer discoveryRoutineWg.Wait()
+
+	for {
+		// make a local copy of servers then iterate because next operations are time consuming (too long to use locked iteration)
+		a.serverPeerMutex.Lock()
+		var serverCount int32 = int32(len(a.serverPeerMap))
+		discoveryQuitArr := make([]chan struct{}, 0, serverCount)
+
+		for _, server := range a.serverPeerMap {
+			// launch discovery routine for each server
+			fail := new(int32)
+			quit := make(chan struct{})
+			discoveryQuitArr = append(discoveryQuitArr, quit)
+
+			discoveryRoutineWg.Add(1)
+			go a.serverDiscovery(server, &discoveryRoutineWg, fail, quit)
+		}
+		a.serverPeerMutex.Unlock()
+
+		select {
+		case <-a.signals.stop:
+			log.Info("maintainServerConnectionRoutine receives stop signal")
+			return
+		case _, ok := <-a.signals.serverMapUpdated:
+			if !ok {
+				return
+			}
+			// stop all current discovery routines
+			for _, q := range discoveryQuitArr {
+				close(q)
+			}
+			// continue and restart with new server discovery cycle
+		}
+	}
+}
+
+func (a *UdpDevice) serverDiscovery(server *core.UdpPeer, discoveryRoutineWg *sync.WaitGroup, serverFailCount *int32, quit <-chan struct{}) {
+	defer discoveryRoutineWg.Done()
+
+	dbId := a.config.DbId
+	sendAddr := server.SendAddr()
+	if sendAddr == nil {
+		log.Error("Cannot connect to nil server address")
+		return
+	}
+
+	addrStr := sendAddr.String()
+
+	defer log.Info("server discovery sub-routine at %s stopped", addrStr)
+	log.Info("server discovery sub-routine at %s started", addrStr)
+
+	var failCount int
+
+	for {
+		var lastRecvTime int64
+		var connected bool
+
+		// find whether connection is already connected
+		a.remoteConnectionMutex.Lock()
+		conn, found := a.remoteConnectionMap[addrStr]
+		a.remoteConnectionMutex.Unlock()
+
+		if found {
+			// connection based timing
+			lastRecvTime = atomic.LoadInt64(&conn.ConnData.LastLocalRecvTime)
+			connected = conn.connected.Load()
+		} else {
+			// peer based timing
+			conn = nil
+			lastRecvTime = server.LastRecvTime()
+		}
+
+		currTime := time.Now().UnixNano()
+		peerPbk := server.PublicKey()
+
+		// when a server is not connected, try to connect in every ACLocalTransactionResponseTimeoutMs
+		// when a server is connected when ServerConnectionInterval is reached since last receive, try resend NHP_AOL for maintaining server connection
+		if !connected || (currTime-lastRecvTime) > int64(ReportToServerInterval*time.Second) {
+			// send NHP_AOL message to server
+			aolMsg := &common.DBOnlineMsg{
+				DBId:          dbId,
+			}
+			aolBytes, _ := json.Marshal(aolMsg)
+
+			aolMd := &core.MsgData{
+				RemoteAddr:    sendAddr.(*net.UDPAddr),
+				HeaderType:    core.NHP_DOL,
+				CipherScheme:  a.config.DefaultCipherScheme,
+				TransactionId: a.device.NextCounterIndex(),
+				Compress:      true,
+				PeerPk:        peerPbk,
+				Message:       aolBytes,
+				ResponseMsgCh: make(chan *core.PacketParserData),
+			}
+
+			if !a.IsRunning() {
+				log.Error("db(%s#%d)[DBOnline] MsgData channel closed or being closed, skip sending", dbId, aolMd.TransactionId)
+				return
+			}
+
+			a.sendMsgCh <- aolMd // create new connection
+			server.UpdateSend(currTime)
+
+			// block until transaction completes or timeouts
+			ppd := <-aolMd.ResponseMsgCh
+			close(aolMd.ResponseMsgCh)
+
+			var err error
+			func() {
+				defer func() {
+					if err != nil {
+						if conn != nil {
+							conn.connected.Store(false)
+						}
+
+						failCount += 1
+						if failCount%ServerDiscoveryRetryBeforeFail == 0 {
+							atomic.StoreInt32(serverFailCount, 1)
+							// remove failed connection
+							a.remoteConnectionMutex.Lock()
+							conn = a.remoteConnectionMap[addrStr]
+							if conn != nil {
+								log.Info("server discovery failed, close local connection: %s", conn.ConnData.LocalAddr.String())
+								delete(a.remoteConnectionMap, addrStr)
+							}
+							a.remoteConnectionMutex.Unlock()
+							conn.Close()
+						}
+						log.Error("db(%s#%d)[DBOnline] reporting to server %s failed", dbId, aolMd.TransactionId, addrStr)
+					}
+				}()
+
+				if ppd.Error != nil {
+					log.Error("db(%s#%d)[DBOnline] failed to receive response from server %s: %v", dbId, aolMd.TransactionId, addrStr, ppd.Error)
+					err = ppd.Error
+					return
+				}
+
+				if ppd.HeaderType != core.NHP_DBA {
+					log.Error("db(%s#%d)[DBOnline] response from server %s has wrong type: %s", dbId, aolMd.TransactionId, addrStr, core.HeaderTypeToString(ppd.HeaderType))
+					err = common.ErrTransactionRepliedWithWrongType
+					return
+				}
+
+				aakMsg := &common.ServerDBAckMsg{}
+				err = json.Unmarshal(ppd.BodyMessage, aakMsg)
+				if err != nil {
+					log.Error("db(%s#%d)[HandleACAck] failed to parse %s message: %v", dbId, ppd.SenderTrxId, core.HeaderTypeToString(ppd.HeaderType), err)
+					return
+				}
+
+				// server discovery succeeded
+				failCount = 0
+				atomic.StoreInt32(serverFailCount, 0)
+				a.remoteConnectionMutex.Lock()
+				conn = a.remoteConnectionMap[addrStr] // conn must be available at this point
+				conn.connected.Store(true)
+				conn.externalAddr = aakMsg.DBAddr
+				a.remoteConnectionMutex.Unlock()
+				log.Info("db(%s#%d)[DBOnline] succeed. db external address is %s, replied by server %s", dbId, aolMd.TransactionId, aakMsg.DBAddr, addrStr)
+			}()
+
+		}
+
+		select {
+		case <-a.signals.stop:
+			log.Info("server discovery sub-routine at %s receives stop signal", addrStr)
+			return
+		case <-quit:
+			return
+		case <-time.After(MinialServerDiscoveryInterval * time.Second):
+			// wait for ServerConnectionDiscoveryInterval
+		}
+	}
+}
+
 func (a *UdpDevice) AddServer(server *core.UdpPeer) {
 	if server.DeviceType() == core.NHP_SERVER {
 		a.device.AddPeer(server)
@@ -474,34 +667,9 @@ func (a *UdpDevice) GetServerPeer() (serverPeer *core.UdpPeer) {
 	}
 	return nil
 }
-func (a *UdpDevice) SendDHPRegister(doId string, policy common.DHPPolicy, dataKey string) {
+func (a *UdpDevice) SendDHPRegister(msg common.DRGMsg) {
 	log.Debug("DHP started")
 	serverPeer := a.GetServerPeer()
-	wrappedKey := dataKey
-	kaoContent := common.DHPKao{
-		KeyWrapper:    "consumer",
-		PolicyBinding: "",
-		ConsumerId:    policy.ConsumerId,
-		WrappedKey:    wrappedKey,
-	}
-
-	jsonkaoContent, err := json.Marshal(kaoContent)
-	if err != nil {
-		log.Error("json parse error:%v", err)
-		return
-	}
-	log.Debug("jsonkaoContent:%s \n", string(jsonkaoContent))
-	msg := common.DRGMsg{
-		DoType:      DoType_Default,
-		DoId:        doId,
-		AccessUrl:   "",
-		AccessByNHP: false,
-		AspHost:     "",
-		KasType:     0,
-		KaoContent:  string(jsonkaoContent),
-		PasType:     2,
-		PaoContent:  "",
-	}
 
 	log.Debug("serverPeer:%s \n", serverPeer)
 	result := a.SendNHPDRG(serverPeer, msg)
@@ -589,6 +757,10 @@ func (a *UdpDevice) GetCipherSchema() int {
 
 func (a *UdpDevice) GetSymmetricCipherMode() string {
 	return a.config.SymmetricCipherMode
+}
+
+func (a *UdpDevice) GetDataBrokerId() string {
+	return a.config.DbId
 }
 
 func (a *UdpDevice) GetOwnEcdh() core.Ecdh {

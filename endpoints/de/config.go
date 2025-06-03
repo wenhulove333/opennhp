@@ -15,6 +15,7 @@ import (
 var (
 	baseConfigWatch     io.Closer
 	serverConfigWatch   io.Closer
+	consumerConfigWatch io.Closer
 	resourceConfigWatch io.Closer
 
 	errLoadConfig = fmt.Errorf("config load error")
@@ -25,6 +26,7 @@ type Config struct {
 	PrivateKeyBase64    string
 	DefaultCipherScheme int `json:"defaultCipherScheme"`
 	SymmetricCipherMode string `json:"symmetricCipherMode"`
+	DbId                string `json:"dbId"`
 }
 
 type Peers struct {
@@ -33,6 +35,16 @@ type Peers struct {
 
 type Resources struct {
 	Resources []*KnockResource
+}
+
+type Consumer struct {
+	ConsumerID string
+	ConsumerPublicKeyBase64 string `json:"consumerPublicKeyBase64"`
+	TEEPublicKeyBase64 string `json:"teePublicKeyBase64"`
+}
+
+type Consumers struct {
+	Consumers []*Consumer
 }
 
 func (a *UdpDevice) loadBaseConfig() error {
@@ -61,6 +73,21 @@ func (a *UdpDevice) loadPeers() error {
 	serverConfigWatch = utils.WatchFile(fileName, func() {
 		log.Info("server peer config: %s has been updated", fileName)
 		a.updateServerPeers(fileName)
+	})
+
+	return nil
+}
+
+func (a *UdpDevice) loadConsumers() error {
+	// consumer.toml
+	fileName := filepath.Join(ExeDirPath, "etc", "consumer.toml")
+	if err := a.updateConsumerConfig(fileName); err != nil {
+		// ignore error
+		_ = err
+	}
+
+	consumerConfigWatch = utils.WatchFile(fileName, func() {
+		log.Info("consumer peer config: %s has been updated", fileName)
 	})
 
 	return nil
@@ -136,6 +163,33 @@ func (a *UdpDevice) updateServerPeers(file string) (err error) {
 	return err
 }
 
+func (a *UdpDevice) updateConsumerConfig(file string) (err error) {
+	utils.CatchPanicThenRun(func() {
+		err = errLoadConfig
+	})
+
+	content, err := os.ReadFile(file)
+	if err != nil {
+		log.Error("failed to read consumer config: %v", err)
+	}
+
+	var consumers Consumers
+	if err := toml.Unmarshal(content, &consumers); err != nil {
+		log.Error("failed to unmarshal consumer config: %v", err)
+	}
+
+	consumerMap := make(map[string]*Consumer)
+	for _, consumer := range consumers.Consumers {
+		consumerMap[consumer.ConsumerID] = consumer
+	}
+
+	a.consumerMutex.Lock()
+	defer a.consumerMutex.Unlock()
+	a.consumerMap = consumerMap
+
+	return nil
+}
+
 func (a *UdpDevice) StopConfigWatch() {
 	if baseConfigWatch != nil {
 		baseConfigWatch.Close()
@@ -145,5 +199,8 @@ func (a *UdpDevice) StopConfigWatch() {
 	}
 	if resourceConfigWatch != nil {
 		resourceConfigWatch.Close()
+	}
+	if consumerConfigWatch != nil {
+		consumerConfigWatch.Close()
 	}
 }

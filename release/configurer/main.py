@@ -50,13 +50,18 @@ class ECCKeyGen():
 
 class Base():
     def __init__(self, path):
+        self._path = path
         with open(path, mode="rt", encoding="utf-8") as fp:
             self._config = tomlkit.load(fp)
+
+    def ExtraConfig(self, key, value):
+        self._config[key] = value
+        with open(self._path, mode="wt", encoding="utf-8") as fp:
+            tomlkit.dump(self._config, fp)
 
 class Config(Base):
     def __init__(self, path):
         super().__init__(path)
-        self._path = path
         self._keygen = ECCKeyGen()
         self._config["PrivateKeyBase64"] = self._keygen.PrivateKeyBase64
         # save back to file
@@ -70,11 +75,6 @@ class Config(Base):
     @property
     def PublicKeyBase64(self):
         return self._keygen.PublicKeyBase64
-
-    def ExtraConfig(self, key, value):
-        self._config[key] = value
-        with open(self._path, mode="wt", encoding="utf-8") as fp:
-            tomlkit.dump(self._config, fp)
 
 class Server(Base):
     def __init__(self, path, server):
@@ -95,6 +95,41 @@ class Client(Base):
         with open(path, mode="wt", encoding="utf-8") as fp:
             tomlkit.dump(self._config, fp)
 
+class DHP(Base):
+    def __init__(self, path):
+        super().__init__(path)
+        self._consumerEccKey = ECCKeyGen()
+        self._teeEccKey = ECCKeyGen()
+        self._config["ConsumerPrivateKeyBase64"] = self._consumerEccKey.PrivateKeyBase64
+        self._config["TEEPrivateKeyBase64"] = self._teeEccKey.PrivateKeyBase64
+        with open(path, mode="wt", encoding="utf-8") as fp:
+            tomlkit.dump(self._config, fp)
+
+    @property
+    def ConsumerPrivateKeyBase64(self):
+        return self._consumerEccKey.PrivateKeyBase64
+
+    @property
+    def ConsumerPublicKeyBase64(self):
+        return self._consumerEccKey.PublicKeyBase64
+
+    @property
+    def TEEPrivateKeyBase64(self):
+        return self._teeEccKey.PrivateKeyBase64
+
+    @property
+    def TEEPublicKeyBase64(self):
+        return self._teeEccKey.PublicKeyBase64
+
+class Consumer(Base):
+    def __init__(self, path, dhp):
+        super().__init__(path)
+        self._dhp = dhp
+        self._config["Consumers"][0]["ConsumerPublicKeyBase64"] = self._dhp.ConsumerPublicKeyBase64
+        self._config["Consumers"][0]["TEEPublicKeyBase64"] = self._dhp.TEEPublicKeyBase64
+        with open(path, mode="wt", encoding="utf-8") as fp:
+            tomlkit.dump(self._config, fp)
+
 class Configurer():
     def __init__(self, release_path):
         self._release_path = release_path
@@ -111,6 +146,10 @@ class Configurer():
         self._server_agent = Client(self._release_path + "/nhp-server/etc/agent.toml", self._agent, "Agents")
         self._server_de = Client(self._release_path + "/nhp-server/etc/de.toml", self._de, "DEs")
         self._server_ac = Client(self._release_path + "/nhp-server/etc/ac.toml", self._ac, "ACs")
+
+        self._agent_dhp = DHP(self._release_path + "/nhp-agent/etc/dhp.toml")
+        self._consumer = Consumer(self._release_path + "/nhp-de/etc/consumer.toml", self._agent_dhp)
+        self._agent_dhp.ExtraConfig("ProviderPublicKeyBase64", self._de.PublicKeyBase64)
 
 
 def main():

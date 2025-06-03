@@ -14,4 +14,6 @@
 # Go workspace
 go.sum
 
-release/
+release/*
+
+!release/configurer

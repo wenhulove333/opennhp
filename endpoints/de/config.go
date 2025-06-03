@@ -24,6 +24,7 @@ type Config struct {
 	LogLevel            int
 	PrivateKeyBase64    string
 	DefaultCipherScheme int `json:"defaultCipherScheme"`
+	SymmetricCipherMode string `json:"symmetricCipherMode"`
 }
 
 type Peers struct {

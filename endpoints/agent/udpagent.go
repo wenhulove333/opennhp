@@ -777,13 +777,16 @@ func (a *UdpAgent) SendDARMsgToServer(server *core.UdpPeer, msg common.DARMsg, z
 
 		dataDecodeKey := dagMsg.WrappedKey
 
+		log.Info("Ztdo file (%s) decryption start with dataKey: %s and provider publickey: %s", ztdo, dataDecodeKey, a.config.ProviderPublicKeyBase64)
+
 		cmd := exec.Command(a.config.DHPExeCMD, "run", "--mode=decrypt", "--ztdo="+ztdo, "--output="+output, "--decodeKey="+dataDecodeKey, "--providerPublicKey="+a.config.ProviderPublicKeyBase64)
 		cmdResult, err := cmd.CombinedOutput()
 		if err != nil {
-			log.Info("Ztdo file decryption faile%v", err)
+			log.Error("Ztdo file decryption faile%v with %v", err, cmdResult)
 			result = false
+		} else {
+			log.Info("Ztdo file decryption result:%v", cmdResult)
 		}
-		log.Info("Ztdo file decryption result:%v", cmdResult)
 	}
 	return result
 }

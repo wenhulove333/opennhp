@@ -198,7 +198,7 @@ func runApp(mode string, source string, output string, policy string, ztdoFilePa
 		log.Info("Decrypting ztdo file(file name: %s and ztdo id: %s) with cipher settings: ECC mode(%s) and Symmetric Cipher Mode(%s)\n", ztdoFilePath, ztdo.GetObjectID(), dataKeyPairEccMode, ztdo.GetCipherMode())
 
 		if err := ztdo.DecryptZtdoFile(ztdoFilePath, output, gcmKey[:], ad); err != nil {
-			log.Error("failed to decrypt ztdo file:%s\n", err)
+			fmt.Printf("failed to decrypt ztdo file:%s\n", err)
 			os.Exit(1)
 		}
 

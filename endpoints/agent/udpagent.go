@@ -687,16 +687,55 @@ func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, output string) {
 		return
 	}
 
+	eccType := core.ECC_SM2
+	if a.config.DefaultCipherScheme == core.CIPHER_SCHEME_CURVE {
+		eccType = core.ECC_CURVE25519
+	}
+	consumerEphemeralEcdh := core.NewECDH(eccType)
+	teePrk, _ := base64.StdEncoding.DecodeString(a.config.TEEPrivateKeyBase64)
+	teeEcdh := core.ECDHFromKey(eccType, teePrk)
+
 	doId := ztdo.GetObjectID()
 	darMsg := common.DARMsg{
 		DoId: doId,
+		ConsumerId: "18888888888",
+		TeePublicKey: teeEcdh.PublicKeyBase64(),
+		ConsumerEphemeralPublicKey: consumerEphemeralEcdh.PublicKeyBase64(),
 	}
 	serverPeer := a.GetFirstServerPeer()
-	result := a.SendDARMsgToServer(serverPeer, darMsg, ztdoPath, output)
+	result, dagMsg := a.SendDARMsgToServer(serverPeer, darMsg)
 	if result {
-		fmt.Println("ZTDO File Decryption: Success")
+		dataPrkWrapping := ztdolib.DataPrivateKeyWrapping{}
+
+		if err := json.Unmarshal([]byte(dagMsg.Kao.WrappedDataKey), &dataPrkWrapping); err != nil {
+			log.Error("failed to unmarshal data private key wrapping: %v", err)
+			fmt.Printf("failed to unmarshal data private key wrapping: %v", err)
+			return
+		}
+
+		providerPbk, _ := base64.StdEncoding.DecodeString(dataPrkWrapping.ProviderPublicKeyBase64)
+
+		sa := ztdolib.NewSymmetricAgreement(ztdo.GetECCMode(), false)
+		sa.SetMessagePatterns(ztdolib.DataPrivateKeyWrappingPatterns)
+		sa.SetPsk([]byte(ztdolib.InitialDHPKeyWrappingString))
+		sa.SetStaticKeyPair(teeEcdh)
+		sa.SetEphemeralKeyPair(consumerEphemeralEcdh)
+		sa.SetRemoteStaticPublicKey(providerPbk)
+
+		gcmKey, ad := sa.AgreeSymmetricKey()
+
+		dataPrk, _ := dataPrkWrapping.Unwrap(gcmKey[:], ad)
+
+		cmd := exec.Command(a.config.DHPExeCMD, "run", "--mode=decrypt", "--ztdo="+ztdoPath, "--output="+output, "--dataPrivateKey="+dataPrk, "--providerPublicKey="+dataPrkWrapping.ProviderPublicKeyBase64)
+
+		_, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Println("ZTDO File Decryption: Failure with error: ", err)
+		} else {
+			fmt.Println("ZTDO File Decryption: Success")
+		}
 	} else {
-		fmt.Println(" ZTDO File Decryption: Failure")
+		fmt.Println("Fail to request ZTDO file.")
 	}
 }
 
@@ -708,7 +747,7 @@ func (a *UdpAgent) GetFirstServerPeer() (serverPeer *core.UdpPeer) {
 	return nil
 }
 
-func (a *UdpAgent) SendDARMsgToServer(server *core.UdpPeer, msg common.DARMsg, ztdo string, output string) bool {
+func (a *UdpAgent) SendDARMsgToServer(server *core.UdpPeer, msg common.DARMsg) (bool, *common.DAGMsg) {
 	result := false
 	sendAddr := server.SendAddr()
 	if sendAddr == nil {
@@ -729,7 +768,7 @@ func (a *UdpAgent) SendDARMsgToServer(server *core.UdpPeer, msg common.DARMsg, z
 	currTime := time.Now().UnixNano()
 	if !a.IsRunning() {
 		log.Error("server-agentMsgData channel closed or being closed, skip sending")
-		return result
+		return result, nil
 	}
 	// device will create or find existing connection and sends the MsgAssembler via that connection
 	a.sendMsgCh <- drgMd
@@ -771,19 +810,5 @@ func (a *UdpAgent) SendDARMsgToServer(server *core.UdpPeer, msg common.DARMsg, z
 		}
 		return true, dagMsg
 	}()
-	if !result {
-		log.Error("File access authorization failed")
-	} else {
-
-		dataDecodeKey := dagMsg.WrappedKey
-
-		cmd := exec.Command(a.config.DHPExeCMD, "run", "--mode=decrypt", "--ztdo="+ztdo, "--output="+output, "--decodeKey="+dataDecodeKey, "--providerPublicKey="+a.config.ProviderPublicKeyBase64)
-		cmdResult, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Info("Ztdo file decryption faile%v", err)
-			result = false
-		}
-		log.Info("Ztdo file decryption result:%v", cmdResult)
-	}
-	return result
+	return result, dagMsg
 }

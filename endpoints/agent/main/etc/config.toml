@@ -2,16 +2,17 @@
 # field with (-) does not support dynamic update
 
 # PrivateKeyBase64 (-): agent private key in base64 format.
+# TEEPrivateKeyBase64 (-): TEE private key in base64 format.
 # DefaultCipherScheme: 0: gmsm, 1: curve25519.
 # UserId: specify the user id this agent represents.
 # OrganizationId: specify the organization id this agent represents.
 # LogLevel: 0: silent, 1: error, 2: info, 3: audit, 4: debug, 5: trace.
 PrivateKeyBase64 = "+Jnee2lP6Kn47qzSaqwSmWxORsBkkCV6YHsRqXCegVo="
+TEEPrivateKeyBase64 = "j20JfF3rjoRtz2m+KP+agYjDBPdQwC9Dwfcasn83yAQ="
 DefaultCipherScheme = 0
 UserId = "agent-0"
 OrganizationId = "opennhp.cn"
 LogLevel = 4
-ProviderPublicKeyBase64 = "CtxNuy7lJ1mJgjqWplcwN8dZhXhSNPhECja1A0OWKa+2wtI7xuB3jPcamogGZGBBfQ4SqnoPGLA7zRQaAotoxg=="
 DHPExeCMD = "..\\nhp-de\\nhp-de.exe"
 # UserData: a customized user entry for flexibility.
 # Its key-value pairs will be send to server along with knock message.

@@ -1,9 +1,7 @@
 # Configuration for trusted data consumer.
 
 # ConsumerID: identifer of data consumer, it can be email, phone number or other unique identifier.
-# ConsumerPublicKeyBase64: base64 encoded public key of data consumer.
 # TEEPublicKeyBase64: base64 encoded public key of TEE (Trusted Execution Environment).
 [[Consumers]]
 ConsumerID = "18087671921"
-ConsumerPublicKeyBase64 = "tmhF1ZjuGD7/VX4F7d4ai/YHjb61IiF8peIT5n6DWyQ24YTBXLHGcAe3qHguLOv/3et7RJMVdLDDwN0Ul/oanA=="
 TEEPublicKeyBase64 = "dvUq+7AvmsS8owkUiTFppamfoyU2DkheTICjPVTU+KU/KRUqlZ0cShNvgj2xTHnH/RNTdaOt8KxQd/d/z3BGrQ=="

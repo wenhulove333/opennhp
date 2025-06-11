@@ -680,7 +680,7 @@ func (a *UdpAgent) FindServerPeerFromResource(res *KnockResource) *core.UdpPeer 
 ztdo: Ztdo file path
 output: Decrypted file output path
 */
-func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, output string) {
+func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, output string, consumerId string) {
 	ztdo := ztdolib.NewZtdo()
 	if err := ztdo.ParseHeader(ztdoPath); err != nil {
 		fmt.Println("ParseHeader error:", err)
@@ -698,7 +698,7 @@ func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, output string) {
 	doId := ztdo.GetObjectID()
 	darMsg := common.DARMsg{
 		DoId: doId,
-		ConsumerId: "18888888888",
+		ConsumerId: consumerId,
 		TeePublicKey: teeEcdh.PublicKeyBase64(),
 		ConsumerEphemeralPublicKey: consumerEphemeralEcdh.PublicKeyBase64(),
 	}
@@ -708,8 +708,8 @@ func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, output string) {
 		dataPrkWrapping := ztdolib.DataPrivateKeyWrapping{}
 
 		if err := json.Unmarshal([]byte(dagMsg.Kao.WrappedDataKey), &dataPrkWrapping); err != nil {
-			log.Error("failed to unmarshal data private key wrapping: %v", err)
-			fmt.Printf("failed to unmarshal data private key wrapping: %v", err)
+			log.Error("failed to unmarshal data private key wrapping: %v\n", err)
+			fmt.Printf("failed to unmarshal data private key wrapping: %v\n", err)
 			return
 		}
 
@@ -730,12 +730,12 @@ func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, output string) {
 
 		_, err := cmd.CombinedOutput()
 		if err != nil {
-			fmt.Println("ZTDO File Decryption: Failure with error: ", err)
+			fmt.Println("ZTDO File Decryption: Failure with error: ", err.Error())
 		} else {
 			fmt.Println("ZTDO File Decryption: Success")
 		}
 	} else {
-		fmt.Println("Fail to request ZTDO file.")
+		fmt.Printf("fail to request ZTDO with error: %s.\n", dagMsg.ErrMsg)
 	}
 }
 
@@ -788,7 +788,7 @@ func (a *UdpAgent) SendDARMsgToServer(server *core.UdpPeer, msg common.DARMsg) (
 		}
 
 		if serverPpd.HeaderType != core.NHP_DAG {
-			log.Error("DE(%s#%d)[SendDARMsgToServer] response from server %s has wrong type: %s", drgMsg.DoId, drgMd.TransactionId, server.Ip, core.HeaderTypeToString(serverPpd.HeaderType))
+			log.Error("DB(%s#%d)[SendDARMsgToServer] response from server %s has wrong type: %s", drgMsg.DoId, drgMd.TransactionId, server.Ip, core.HeaderTypeToString(serverPpd.HeaderType))
 			err = common.ErrTransactionRepliedWithWrongType
 			return false, dagMsg
 		}

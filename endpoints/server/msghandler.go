@@ -270,9 +270,9 @@ func (s *UdpServer) HandleDBOnline(ppd *core.PacketParserData) (err error) {
 
 	dbId := dolMsg.DBId
 	dbPubkeyBase64 := base64.StdEncoding.EncodeToString(ppd.RemotePubKey)
-	s.dePeerMapMutex.Lock()
-	dbPeer := s.dePeerMap[dbPubkeyBase64] // ac peer's recvAddr has already been updated by nhp packet parser
-	s.dePeerMapMutex.Unlock()
+	s.dbPeerMapMutex.Lock()
+	dbPeer := s.dbPeerMap[dbPubkeyBase64] // ac peer's recvAddr has already been updated by nhp packet parser
+	s.dbPeerMapMutex.Unlock()
 
 	dbConn := &DBConn{
 		ConnData:       ppd.ConnData,
@@ -352,13 +352,13 @@ func (s *UdpServer) HandleDHPDARMessage(ppd *core.PacketParserData) (err error) 
 			dagMsg.ErrMsg = err.Error()
 		} else {
 			dwaMsg, err := s.ProcessDataPrivateKeyWrapping(dwrMsg, dbConn)
-			if err != nil {
-				dagMsg.ErrCode = 1
-				dagMsg.ErrMsg = err.Error()
+			if err != nil || dwaMsg.ErrCode != 0 {
+				dagMsg.ErrCode = dwaMsg.ErrCode
+				dagMsg.ErrMsg = dwaMsg.ErrMsg
 			}
 
 			dagMsg.Kao = dwaMsg.Kao
-			dagMsg.Spo = config.Spo
+			dagMsg.Spo = &config.Spo
 			dagMsg.DataSourceType = config.DataSourceType
 			dagMsg.AccessUrl = config.AccessUrl
 			dagMsg.AccessByNHP = config.AccessByNHP
@@ -435,7 +435,7 @@ func (s *UdpServer) HandleDHPDRGMessage(ppd *core.PacketParserData) (err error) 
 
 	transaction := ppd.ConnData.FindRemoteTransaction(transactionId)
 	if transaction == nil {
-		log.Error("server-DE(@%s#%d@%s)[HandleDHPDRGMessage] transaction is not available", doId, transactionId, addrStr)
+		log.Error("server-DB(@%s#%d@%s)[HandleDHPDRGMessage] transaction is not available", doId, transactionId, addrStr)
 		err = common.ErrTransactionIdNotFound
 		return err
 	}

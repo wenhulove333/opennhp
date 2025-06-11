@@ -228,8 +228,8 @@ type DAGMsg struct {
 	DataSourceType string          `json:"dataSourceType,omitempty"` // Data source type, the default value is online, and supported values are online, offline and stream.
 	AccessUrl      string          `json:"accessUrl,omitempty"`      // Data access URL
 	AccessByNHP    bool            `json:"accessByNHP,omitempty"`    // Indicates whether to grant access to the data through NHP
-	Kao            KeyAccessObject `json:"kao,omitempty"`            // Key access object
-	Spo            SmartPolicy     `json:"spo,omitempty"`            // Smart policy Object
+	Kao            *KeyAccessObject `json:"kao,omitempty"`            // Key access object
+	Spo            *SmartPolicy     `json:"spo,omitempty"`            // Smart policy Object
 	ErrCode        int             `json:"errCode"`                  // Registration error code (0=success)
 	ErrMsg         string          `json:"errMsg"`                   // Error message (empty if success)
 }
@@ -243,7 +243,7 @@ type DWRMsg struct {
 
 type DWAMsg struct {
 	DoId    string          `json:"doId"`          // Data object identifier
-	Kao     KeyAccessObject `json:"kao,omitempty"` // Key access object
+	Kao     *KeyAccessObject `json:"kao,omitempty"` // Key access object
 	ErrCode int             `json:"errCode"`       // Registration error code (0=success)
 	ErrMsg  string          `json:"errMsg"`        // Error message (empty if success)
 }
@@ -251,7 +251,7 @@ type DWAMsg struct {
 type DSAMsg struct {
 	DoId  string      `json:"doId"`          // Data object identifier
 	SpoId string      `json:"spoId"`         // Smart Policy Object identifier
-	Spo   SmartPolicy `json:"spo,omitempty"` // Smart policy Object
+	Spo   *SmartPolicy `json:"spo,omitempty"` // Smart policy Object
 	TTL   int         `json:"TTL"`           // Evidence validity period in milliseconds
 }
 

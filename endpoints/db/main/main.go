@@ -9,7 +9,7 @@ import (
 	"slices"
 	"syscall"
 
-	"github.com/OpenNHP/opennhp/endpoints/de"
+	"github.com/OpenNHP/opennhp/endpoints/db"
 	"github.com/OpenNHP/opennhp/nhp/common"
 	"github.com/OpenNHP/opennhp/nhp/core"
 	ztdolib "github.com/OpenNHP/opennhp/nhp/core/ztdo"
@@ -155,18 +155,14 @@ func initApp() {
 	}
 }
 
-/*
-*
-decodeKey:Data Decryption Key
-decodeSavePath:Save Directory Path
-*/
+
 func runApp(mode string, source string, dsType string, output string, smartPolicy string, ztdoFilePath string, dataPrivateKeyBase64 string, accessUrl string, providerPublicKeyBase64 string) error {
 	exeFilePath, err := os.Executable()
 	if err != nil {
 		return err
 	}
 	exeDirPath := filepath.Dir(exeFilePath)
-	a := &de.UdpDevice{}
+	a := &db.UdpDevice{}
 	if mode == "none" {
 		a.EnableOnlineReport = true
 	}
@@ -200,12 +196,12 @@ func runApp(mode string, source string, dsType string, output string, smartPolic
 	dataPrk := ztdo.Generate(dataKeyPairEccMode)
 	base64.StdEncoding.EncodeToString(dataPrk)
 
-	de.SaveDataPrivateKeyBase64(ztdo.GetObjectID(), base64.StdEncoding.EncodeToString(dataPrk))
+	db.SaveDataPrivateKeyBase64(ztdo.GetObjectID(), base64.StdEncoding.EncodeToString(dataPrk))
 
 	if mode == "encrypt" {
 		outputFilePath := output
 		policyFile := smartPolicy
-		smartPolicy, err := de.ReadPolicyFile(policyFile)
+		smartPolicy, err := db.ReadPolicyFile(policyFile)
 		if err != nil {
 			log.Error("failed to read policy file:%s\n", err)
 			return err
@@ -245,7 +241,7 @@ func runApp(mode string, source string, dsType string, output string, smartPolic
 
 		if dsType != "offline" {
 			drgMsg := common.DRGMsg{
-				DoType: de.DoType_Default,
+				DoType: db.DoType_Default,
 				DoId:   ztdo.GetObjectID(),
 				DbId:   a.GetDataBrokerId(),
 				DataSourceType: dsType,

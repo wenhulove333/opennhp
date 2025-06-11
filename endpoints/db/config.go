@@ -1,4 +1,4 @@
-package de
+package db
 
 import (
 	"fmt"
@@ -39,7 +39,6 @@ type Resources struct {
 
 type Consumer struct {
 	ConsumerID string
-	ConsumerPublicKeyBase64 string `json:"consumerPublicKeyBase64"`
 	TEEPublicKeyBase64 string `json:"teePublicKeyBase64"`
 }
 
@@ -145,7 +144,7 @@ func (a *UdpDevice) updateServerPeers(file string) (err error) {
 		log.Error("failed to unmarshal server config: %v", err)
 	}
 	for _, p := range peers.Servers {
-		p.Type = core.NHP_DE
+		p.Type = core.NHP_DB
 		a.device.AddPeer(p)
 		serverPeerMap[p.PublicKeyBase64()] = p
 	}

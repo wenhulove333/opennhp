@@ -86,9 +86,9 @@ type UdpServer struct {
 	recvMsgCh <-chan *core.PacketParserData
 	sendMsgCh chan *core.MsgData
 
-	//NHP-DE
-	dePeerMapMutex sync.Mutex
-	dePeerMap      map[string]*core.UdpPeer // indexed by peer's public key base64 string
+	//NHP-DB
+	dbPeerMapMutex sync.Mutex
+	dbPeerMap      map[string]*core.UdpPeer // indexed by peer's public key base64 string
 }
 
 type BlockAddr struct {
@@ -1017,11 +1017,11 @@ func (us *UdpServer) FindPluginHandler(aspId string) plugins.PluginHandler {
 
 // DHP
 func (s *UdpServer) AddDEPeer(device *core.UdpPeer) {
-	if device.DeviceType() == core.NHP_DE {
+	if device.DeviceType() == core.NHP_DB {
 		s.device.AddPeer(device)
-		s.dePeerMapMutex.Lock()
-		s.dePeerMap[device.PublicKeyBase64()] = device
-		s.dePeerMapMutex.Unlock()
+		s.dbPeerMapMutex.Lock()
+		s.dbPeerMap[device.PublicKeyBase64()] = device
+		s.dbPeerMapMutex.Unlock()
 	}
 }
 
@@ -1050,7 +1050,7 @@ func (s *UdpServer) ProcessDataPrivateKeyWrapping(dwrMsg *common.DWRMsg, conn *D
 	dwaMsg = &common.DWAMsg{}
 
 	if !s.IsRunning() {
-		log.Error("server-agent-db(%s#%d@%s)[ProcessDataPrivateKeyWrappiing] MsgData channel closed or being closed, skip sending", conn.DBId, dwrMd.TransactionId, dbAddrStr)
+		log.Error("server-agent-db(%s#%d@%s)[ProcessDataPrivateKeyWrapping] MsgData channel closed or being closed, skip sending", conn.DBId, dwrMd.TransactionId, dbAddrStr)
 		err = common.ErrPacketToMessageRoutineStopped
 		errCode, _ := strconv.Atoi(common.ErrPacketToMessageRoutineStopped.ErrorCode())
 		dwaMsg.ErrCode = errCode
@@ -1068,7 +1068,7 @@ func (s *UdpServer) ProcessDataPrivateKeyWrapping(dwrMsg *common.DWRMsg, conn *D
 
 	err = json.Unmarshal(dbPpd.BodyMessage, dwaMsg)
 	if err != nil {
-		log.Error("server-agent-db(%s#%d@%s)[processACOperation] failed to parse %s message: %v", conn.DBId, dwrMd.TransactionId, dbAddrStr, core.HeaderTypeToString(dbPpd.HeaderType), err)
+		log.Error("server-agent-db(%s#%d@%s)[ProcessDataPrivateKeyWrapping] failed to parse %s message: %v", conn.DBId, dwrMd.TransactionId, dbAddrStr, core.HeaderTypeToString(dbPpd.HeaderType), err)
 		errCode, _ := strconv.Atoi(common.ErrJsonParseFailed.ErrorCode())
 		dwaMsg.ErrCode = errCode
 		dwaMsg.ErrMsg = err.Error()

@@ -44,7 +44,7 @@ func (d *Device) IsTransactionRequest(t int) bool {
 		case NHP_AOL, NHP_AOP:
 			return true
 		}
-	case NHP_DE:
+	case NHP_DB:
 		switch t {
 		case NHP_DRG, NHP_DOL, NHP_DWR:
 			return true
@@ -66,7 +66,7 @@ func (d *Device) LocalTransactionTimeout() int {
 		return ServerLocalTransactionResponseTimeoutMs
 	case NHP_AC:
 		return ACLocalTransactionResponseTimeoutMs
-	case NHP_DE:
+	case NHP_DB:
 		return DELocalTransactionResponseTimeoutMs
 	case NHP_RELAY:
 		// no transaction request for relay
@@ -99,7 +99,7 @@ func (d *Device) IsTransactionResponse(t int) bool {
 		case NHP_AAK, NHP_ART:
 			return true
 		}
-	case NHP_DE:
+	case NHP_DB:
 		switch t {
 		case NHP_DAK, NHP_DBA:
 			return true

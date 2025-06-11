@@ -116,4 +116,7 @@ var (
 	ErrHttpResponseFormatError     = newError("54002", "http response format error", "http响应格式错误")
 	ErrHttpReturnedWithError       = newError("54003", "http returns with error", "http返回带有错误")
 	ErrHttpResourceAddressNotFound = newError("54004", "http resource address not found", "http无法找到资源地址")
+
+	// db
+	ErrConsumerNotAuthorized = newError("55001", "data consumer is  not authorized", "数据消费者未授权")
 )

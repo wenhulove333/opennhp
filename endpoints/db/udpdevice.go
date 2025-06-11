@@ -1,4 +1,4 @@
-package de
+package db
 
 import (
 	"encoding/base64"
@@ -119,11 +119,11 @@ func (a *UdpDevice) Start(dirPath string, logLevel int) (err error) {
 	common.ExeDirPath = dirPath
 	ExeDirPath = dirPath
 	// init logger
-	a.log = log.NewLogger("NHP-DE", logLevel, filepath.Join(ExeDirPath, "logs"), "device")
+	a.log = log.NewLogger("NHP-DB", logLevel, filepath.Join(ExeDirPath, "logs"), "device")
 	log.SetGlobalLogger(a.log)
 
 	log.Info("=========================================================")
-	log.Info("=== NHP-DE %s started                           ===", version.Version)
+	log.Info("=== NHP-DB %s started                           ===", version.Version)
 	log.Info("=== REVISION %s ===", version.CommitId)
 	log.Info("=== RELEASE %s                       ===", version.BuildTime)
 	log.Info("=========================================================")
@@ -139,7 +139,7 @@ func (a *UdpDevice) Start(dirPath string, logLevel int) (err error) {
 		return fmt.Errorf("private key parse error %v", err)
 	}
 
-	a.device = core.NewDevice(core.NHP_DE, prk, nil)
+	a.device = core.NewDevice(core.NHP_DB, prk, nil)
 	if a.device == nil {
 		log.Critical("failed to create device %v\n", err)
 		return fmt.Errorf("failed to create device %v", err)
@@ -632,7 +632,7 @@ func (a *UdpDevice) serverDiscovery(server *core.UdpPeer, discoveryRoutineWg *sy
 				aakMsg := &common.ServerDBAckMsg{}
 				err = json.Unmarshal(ppd.BodyMessage, aakMsg)
 				if err != nil {
-					log.Error("db(%s#%d)[HandleACAck] failed to parse %s message: %v", dbId, ppd.SenderTrxId, core.HeaderTypeToString(ppd.HeaderType), err)
+					log.Error("db(%s#%d)[HandleDBAck] failed to parse %s message: %v", dbId, ppd.SenderTrxId, core.HeaderTypeToString(ppd.HeaderType), err)
 					return
 				}
 
@@ -748,13 +748,13 @@ func (a *UdpDevice) SendNHPDRG(server *core.UdpPeer, msg common.DRGMsg) bool {
 	result = func() bool {
 
 		if serverPpd.Error != nil {
-			log.Error("DE(%s#%d)[SendNHPDRG] failed to receive response from server %s: %v", drgMsg.DoId, drgMd.TransactionId, server.Ip, serverPpd.Error)
+			log.Error("DB(%s#%d)[SendNHPDRG] failed to receive response from server %s: %v", drgMsg.DoId, drgMd.TransactionId, server.Ip, serverPpd.Error)
 			err = serverPpd.Error
 			return false
 		}
 
 		if serverPpd.HeaderType != core.NHP_DAK {
-			log.Error("DE(%s#%d)[SendNHPDRG] response from server %s has wrong type: %s", drgMsg.DoId, drgMd.TransactionId, server.Ip, core.HeaderTypeToString(serverPpd.HeaderType))
+			log.Error("DB(%s#%d)[SendNHPDRG] response from server %s has wrong type: %s", drgMsg.DoId, drgMd.TransactionId, server.Ip, core.HeaderTypeToString(serverPpd.HeaderType))
 			err = common.ErrTransactionRepliedWithWrongType
 			return false
 		}
@@ -763,12 +763,12 @@ func (a *UdpDevice) SendNHPDRG(server *core.UdpPeer, msg common.DRGMsg) bool {
 		//json string to DAKMsg Object
 		err = json.Unmarshal(serverPpd.BodyMessage, dakMsg)
 		if err != nil {
-			log.Error("DE(%s#%d)[HandleDHPDRGMessage] failed to parse %s message: %v", drgMsg.DoId, serverPpd.SenderTrxId, core.HeaderTypeToString(serverPpd.HeaderType), err)
+			log.Error("DB(%s#%d)[HandleDHPDRGMessage] failed to parse %s message: %v", drgMsg.DoId, serverPpd.SenderTrxId, core.HeaderTypeToString(serverPpd.HeaderType), err)
 			return false
 		}
 		dakMsgString, err := json.Marshal(dakMsg)
 		if err != nil {
-			log.Error("DE(%s#%d)DAKMsg failed to parse %s message: %v", dakMsg.DoId, err)
+			log.Error("DB(%s#%d)DAKMsg failed to parse %s message: %v", dakMsg.DoId, err)
 			return false
 		}
 		log.Info("SendNHPDRG result：%v", string(dakMsgString))
@@ -804,6 +804,18 @@ func (a *UdpDevice) GetOwnEcdh() core.Ecdh {
 	return core.ECDHFromKey(eccMode, prk)
 }
 
+func (a *UdpDevice) isConsumerAuthorized(consumerId string, teePbkBase64 string) bool {
+	a.consumerMutex.Lock()
+	defer a.consumerMutex.Unlock()
+	if consumer, found := a.consumerMap[consumerId]; found {
+		if teePbkBase64 == consumer.TEEPublicKeyBase64 {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (a *UdpDevice) HandleUdpDataKeyWrappingOperations(ppd *core.PacketParserData) (err error) {
 	defer a.wg.Done()
 
@@ -815,36 +827,44 @@ func (a *UdpDevice) HandleUdpDataKeyWrappingOperations(ppd *core.PacketParserDat
 	transactionId := ppd.SenderTrxId
 	err = json.Unmarshal(ppd.BodyMessage, dwrMsg)
 	if err == nil {
-		dataPrk, _ := GetDataPrivateKeyBase64(dwrMsg.DoId)
+		if !a.isConsumerAuthorized(dwrMsg.ConsumerId, dwrMsg.TeePublicKey) {
+			log.Error("DB(%s#%d)[HandleUdpDataKeyWrappingOperations] consumer %s is not authorized to get data key wrapping", dbId, transactionId, dwrMsg.ConsumerId)
+			err = fmt.Errorf("consumer is not authorized")
+			errCode, _ := strconv.Atoi(common.ErrConsumerNotAuthorized.ErrorCode())
+			dwaMsg.ErrCode = errCode
+			dwaMsg.ErrMsg = err.Error()
+		} else {
+			dataPrk, _ := GetDataPrivateKeyBase64(dwrMsg.DoId)
 
-		dataKeyPairEccMode := ztdolib.SM2
-		if a.config.DefaultCipherScheme == core.CIPHER_SCHEME_CURVE {
-			dataKeyPairEccMode = ztdolib.CURVE25519
+			dataKeyPairEccMode := ztdolib.SM2
+			if a.config.DefaultCipherScheme == core.CIPHER_SCHEME_CURVE {
+				dataKeyPairEccMode = ztdolib.CURVE25519
+			}
+
+			teePbk, _ := base64.StdEncoding.DecodeString(dwrMsg.TeePublicKey)
+			consumerEPbk, _ := base64.StdEncoding.DecodeString(dwrMsg.ConsumerEphemeralPublicKey)
+
+
+			sa := ztdolib.NewSymmetricAgreement(dataKeyPairEccMode, true)
+			sa.SetMessagePatterns(ztdolib.DataPrivateKeyWrappingPatterns)
+			sa.SetPsk([]byte(ztdolib.InitialDHPKeyWrappingString))
+			sa.SetStaticKeyPair(a.GetOwnEcdh())
+			sa.SetRemoteStaticPublicKey(teePbk)
+			sa.SetRemoteEphemeralPublicKey(consumerEPbk)
+
+			gcmKey, ad := sa.AgreeSymmetricKey()
+
+			dataPrkWrapping := ztdolib.NewDataPrivateKeyWrapping(a.GetOwnEcdh().PublicKeyBase64(), dataPrk, gcmKey[:], ad)
+
+			dataPrkWrappingJson, _ := json.Marshal(dataPrkWrapping)
+
+			kao := common.KeyAccessObject{
+				ConsumerId: dwrMsg.ConsumerId,
+				WrappedDataKey: string(dataPrkWrappingJson),
+			}
+			dwaMsg.Kao = &kao
+			dwaMsg.DoId = dwrMsg.DoId
 		}
-
-		teePbk, _ := base64.StdEncoding.DecodeString(dwrMsg.TeePublicKey)
-		consumerEPbk, _ := base64.StdEncoding.DecodeString(dwrMsg.ConsumerEphemeralPublicKey)
-
-
-		sa := ztdolib.NewSymmetricAgreement(dataKeyPairEccMode, true)
-		sa.SetMessagePatterns(ztdolib.DataPrivateKeyWrappingPatterns)
-		sa.SetPsk([]byte(ztdolib.InitialDHPKeyWrappingString))
-		sa.SetStaticKeyPair(a.GetOwnEcdh())
-		sa.SetRemoteStaticPublicKey(teePbk)
-		sa.SetRemoteEphemeralPublicKey(consumerEPbk)
-
-		gcmKey, ad := sa.AgreeSymmetricKey()
-
-		dataPrkWrapping := ztdolib.NewDataPrivateKeyWrapping(a.GetOwnEcdh().PublicKeyBase64(), dataPrk, gcmKey[:], ad)
-
-		dataPrkWrappingJson, _ := json.Marshal(dataPrkWrapping)
-
-		kao := common.KeyAccessObject{
-			ConsumerId: dwrMsg.ConsumerId,
-			WrappedDataKey: string(dataPrkWrappingJson),
-		}
-		dwaMsg.Kao = kao
-		dwaMsg.DoId = dwrMsg.DoId
 	} else {
 		log.Error("db(%s#%d)[HandleUdpDataKeyWrappingOperations] failed to parse %s message: %v", dbId, transactionId, core.HeaderTypeToString(ppd.HeaderType), err)
 		errCode, _ := strconv.Atoi(common.ErrJsonParseFailed.ErrorCode())

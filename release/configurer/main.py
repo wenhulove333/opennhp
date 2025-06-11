@@ -89,7 +89,7 @@ class Server(Base):
             tomlkit.dump(self._config, fp)
 
 class Client(Base):
-    def __init__(self, path, client, type): # type: ACs, Agents, DEs
+    def __init__(self, path, client, type): # client type: ACs, Agents, DBs
         super().__init__(path)
         self._client = client
         self._config[type][0]["PubKeyBase64"] = self._client.PublicKeyBase64
@@ -97,10 +97,8 @@ class Client(Base):
             tomlkit.dump(self._config, fp)
 
 class Consumer(Base):
-    def __init__(self, path, agent):
+    def __init__(self, path):
         super().__init__(path)
-        self._agent = agent
-        self._config["Consumers"][0]["ConsumerPublicKeyBase64"] = self._agent.PublicKeyBase64
         with open(path, mode="wt", encoding="utf-8") as fp:
             tomlkit.dump(self._config, fp)
     def ExtraConfig(self, key, value):
@@ -115,20 +113,20 @@ class Configurer():
         self._agent = Config(self._release_path + "/nhp-agent/etc/config.toml")
         teeKeyGen = ECCKeyGen()
         self._agent.ExtraConfig("TEEPrivateKeyBase64", teeKeyGen.PrivateKeyBase64)
-        self._de = Config(self._release_path + "/nhp-de/etc/config.toml")
+        self._db = Config(self._release_path + "/nhp-db/etc/config.toml")
         self._ac = Config(self._release_path + "/nhp-ac/etc/config.toml")
         if platform.system() != "Windows":
-            self._agent.ExtraConfig("DHPExeCMD", "../nhp-de/nhp-de")
+            self._agent.ExtraConfig("DHPExeCMD", "../nhp-db/nhp-db")
 
         self._agent_server = Server(self._release_path + "/nhp-agent/etc/server.toml", self._server)
-        self._de_server = Server(self._release_path + "/nhp-de/etc/server.toml", self._server)
+        self._db_server = Server(self._release_path + "/nhp-db/etc/server.toml", self._server)
         self._ac_server = Server(self._release_path + "/nhp-ac/etc/server.toml", self._server)
 
         self._server_agent = Client(self._release_path + "/nhp-server/etc/agent.toml", self._agent, "Agents")
-        self._server_de = Client(self._release_path + "/nhp-server/etc/de.toml", self._de, "DEs")
+        self._server_db = Client(self._release_path + "/nhp-server/etc/db.toml", self._db, "DBs")
         self._server_ac = Client(self._release_path + "/nhp-server/etc/ac.toml", self._ac, "ACs")
 
-        self._consumer = Consumer(self._release_path + "/nhp-de/etc/consumer.toml", self._agent)
+        self._consumer = Consumer(self._release_path + "/nhp-db/etc/consumer.toml")
         self._consumer.ExtraConfig("TEEPublicKeyBase64", teeKeyGen.PublicKeyBase64)
 
 

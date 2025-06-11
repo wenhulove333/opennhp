@@ -78,13 +78,15 @@ func main() {
 		Name:  "dhp",
 		Usage: "create and dhp agent process for NHP protocol",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "ztdo", Value: "", Usage: "Ztdo file path"},
-			&cli.StringFlag{Name: "output", Value: "", Usage: "Decrypted file output path"},
+			&cli.StringFlag{Name: "ztdo", Value: "", Usage: "Ztdo file path", Required: true},
+			&cli.StringFlag{Name: "output", Value: "", Usage: "Decrypted file output path", Required: true},
+			&cli.StringFlag{Name: "consumerId", Value: "", Usage: "Identifer of data consumer, it can be email, phone number or other unique identifier.", Required: true},
 		},
 		Action: func(c *cli.Context) error {
 			ztdo := c.String("ztdo")
 			output := c.String("output")
-			return runDHPApp(ztdo, output)
+			consumerId := c.String("consumerId")
+			return runDHPApp(ztdo, output, consumerId)
 		},
 	}
 
@@ -123,7 +125,7 @@ func runApp() error {
 	a.Stop()
 	return nil
 }
-func runDHPApp(ztdo string, output string) error {
+func runDHPApp(ztdo string, output string, consumerId string) error {
 	exeFilePath, err := os.Executable()
 	if err != nil {
 		return err
@@ -138,7 +140,7 @@ func runDHPApp(ztdo string, output string) error {
 	}
 	if ztdo != "" {
 		//request ztdo file
-		a.StartDecodeZtdo(ztdo, output)
+		a.StartDecodeZtdo(ztdo, output, consumerId)
 	} else {
 		a.StartKnockLoop()
 	}

@@ -1,4 +1,4 @@
-package de
+package db
 
 import (
 	"encoding/json"

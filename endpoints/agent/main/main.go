@@ -81,6 +81,7 @@ func main() {
 			&cli.StringFlag{Name: "ztdo", Value: "", Usage: "Ztdo file path"},
 			&cli.StringFlag{Name: "ztdo-id", Value: "", Usage: "Identifier of ztdo"},
 			&cli.StringFlag{Name: "output", Value: "", Usage: "Decrypted file output path"},
+			&cli.StringFlag{Name: "trusted-application", Value: "", Usage: "Command to run trusted application after decryption, e.g. \"ta <name> <parameter name> <parameter value> <parameter name> <parameter value> ...\", if only trusted application is specified, supported functions and their parameters are printed."},
 		},
 		Before: func(c *cli.Context) error {
 			if c.String("ztdo") == "" && c.String("ztdo-id") == "" {
@@ -95,7 +96,8 @@ func main() {
 			ztdo := c.String("ztdo")
 			ztdoId := c.String("ztdo-id")
 			output := c.String("output")
-			return runDHPApp(ztdo, ztdoId, output)
+			trustedApplication := c.String("trusted-application")
+			return runDHPApp(ztdo, ztdoId, output, trustedApplication)
 		},
 	}
 
@@ -135,7 +137,7 @@ func runApp() error {
 	return nil
 }
 
-func runDHPApp(ztdo string, ztdoId string, output string) error {
+func runDHPApp(ztdo string, ztdoId string, output string, trustedApplication string) error {
 	exeFilePath, err := os.Executable()
 	if err != nil {
 		return err
@@ -150,7 +152,7 @@ func runDHPApp(ztdo string, ztdoId string, output string) error {
 	}
 	if ztdo != "" || ztdoId != "" {
 		//request ztdo file
-		a.StartDecodeZtdo(ztdo, ztdoId, output)
+		a.StartDecodeZtdo(ztdo, ztdoId, output, trustedApplication)
 	} else {
 		a.StartKnockLoop()
 	}

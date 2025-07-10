@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -8,9 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
+	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/OpenNHP/opennhp/nhp/common"
 	"github.com/OpenNHP/opennhp/nhp/core"
@@ -118,6 +124,8 @@ type UdpAgent struct {
 	knockUser      *KnockUser
 	deviceId       string
 	checkResults   map[string]any
+
+	smartPolicyEngine *wasmEngine.Engine
 }
 
 type UdpConn struct {
@@ -687,7 +695,7 @@ func (a *UdpAgent) FindServerPeerFromResource(res *KnockResource) *core.UdpPeer 
 ztdo: Ztdo file path
 output: Decrypted file output path
 */
-func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, ztdoId string, output string) {
+func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, ztdoId string, output string, trustedApplication string) {
 	var doId string
 
 	if output == "" {
@@ -788,8 +796,23 @@ func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, ztdoId string, output string
 		_, err := cmd.CombinedOutput()
 		if err != nil {
 			fmt.Println("Error: fail to decrypt ztdo file with error: ", err.Error())
+			return
 		} else {
-			fmt.Println("Successfully decrypt ztdo file into", output)
+			// call trusted application to do confidential computing
+			if trustedApplication != "" {
+				result, err := a.CallTrustedApplication(trustedApplication, output)
+				defer os.Remove(output)
+				if err != nil {
+					fmt.Println("Error: fail to call trusted application with error: ", err.Error())
+					return
+				} else {
+					fmt.Println("Successfully call trusted application:", trustedApplication)
+					fmt.Println("Successfully get confidential computing result:", result)
+					return
+				}
+			} else {
+				fmt.Printf("Successfully decrypt ztdo file into %s.\n", output)
+			}
 		}
 	} else {
 		fmt.Printf("Error: fail to request ztdo with error: %s.\n", dagMsg.ErrMsg)
@@ -987,12 +1010,111 @@ func (s *UdpAgent) onAttestationCollect(spo *common.SmartPolicy) (string, error)
 
 	engine := wasmEngine.NewEngine()
 	err = engine.LoadWasm(wasmBytes)
-	defer engine.Close()
 	if err != nil {
 		return "", err
 	}
 
+	s.smartPolicyEngine = engine
+
 	attestation := engine.OnAttestationCollect()
 
 	return attestation, nil
+}
+
+func (a *UdpAgent) CallTrustedApplication(trustedApp string, dataPath string) (string, error) {
+	parts := strings.Fields(trustedApp)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var c *client.Client
+	var err error
+
+	command := parts[0]
+	stdioTransport := transport.NewStdio(command, nil)
+	c = client.NewClient(stdioTransport)
+
+	if err := c.Start(ctx); err != nil {
+		log.Error("Failed to start trusted application: %v", err)
+		return "", err
+	}
+
+
+	initRequest := mcp.InitializeRequest{}
+	initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+	initRequest.Params.ClientInfo = mcp.Implementation{
+		Name:    "Trusted Application Executor",
+		Version: "1.0.0",
+	}
+	initRequest.Params.Capabilities = mcp.ClientCapabilities{}
+
+	_, err = c.Initialize(ctx, initRequest)
+	if err != nil {
+		log.Error("Failed to initialize: %v", err)
+		return "", err
+	}
+
+	if len(parts) == 1 {
+		toolsRequest := mcp.ListToolsRequest{}
+		toolsResult, err := c.ListTools(ctx, toolsRequest)
+		if err != nil {
+			log.Error("Failed to list functions which are supported in trusted application: %v", err)
+			return "", err
+		} else {
+			fmt.Printf("Trusted application has %d functions available\n", len(toolsResult.Tools))
+			for i, tool := range toolsResult.Tools {
+				fmt.Printf("  %d. %s - %s\n", i+1, tool.Name, tool.Description)
+				schema := tool.InputSchema
+				fmt.Printf("     Parameters:\n")
+				for name, propSchema := range schema.Properties {
+					prop, _ := propSchema.(map[string]any)
+					fmt.Printf("       %s: %s\n", name, prop["type"].(string))
+				}
+			}
+
+			return "", fmt.Errorf("need to specify function and its parameters.")
+		}
+	} else {
+		// the length of parts must be even.
+		if len(parts)%2 != 0 {
+			return "", fmt.Errorf("invalid function format: %s", parts)
+		}
+
+		functionName := parts[1]
+		args := map[string]any{}
+
+		// Injected parameter by the caller
+		args["path"] = dataPath
+		// after 2nd part, each pair is a parameter name and value
+		for i := 2; i < len(parts); i += 2 {
+			args[parts[i]] = parts[i+1]
+			if parts[i] == "path" {
+				return "", fmt.Errorf("don't need to explicitly specify path parameter.")
+			}
+		}
+
+		callRequest := mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Name: functionName,
+				Arguments: args,
+			},
+		}
+
+		callResponse, err := c.CallTool(ctx, callRequest)
+		if err != nil {
+			return "", err
+		}
+
+		// check the type of content
+		switch firstContent := callResponse.Content[0].(type) {
+			case mcp.TextContent:
+				// postprocess data
+				resultWithPostProcess := a.smartPolicyEngine.OnDataPostprocess(firstContent.Text)
+				defer a.smartPolicyEngine.Close()
+
+				return resultWithPostProcess, nil
+			default:
+				return "", fmt.Errorf("unexpected content type: %T", callResponse.Content[0])
+		}
+	}
 }

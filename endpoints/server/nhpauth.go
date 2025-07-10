@@ -15,16 +15,38 @@ func (s *UdpServer) HandleKnockRequest(ppd *core.PacketParserData) (err error) {
 	defer s.wg.Done()
 	s.wg.Add(1)
 
+	isDHPKnock := false
+
 	transactionId := ppd.SenderTrxId
 	addrStr := ppd.ConnData.RemoteAddr.String()
 	knkMsg := &common.AgentKnockMsg{}
+	dhpKnkMsg := &common.DHPKnockMsg{}
 	ackMsg := &common.ServerKnockAckMsg{
 		AgentAddr: addrStr, // optional, to tell agent its own outwards ip address
+	}
+	dhpAckMsg := &common.ServerDHPKnockAckMsg{
+		OpenTime: 30, // currently, use fixed value, unit is seconds.
 	}
 
 	func() {
 		// parse knockMsg
-		err = json.Unmarshal(ppd.BodyMessage, knkMsg)
+		err = json.Unmarshal(ppd.BodyMessage, dhpKnkMsg)
+		if err == nil {
+			if dhpKnkMsg.IsDHP {
+				isDHPKnock = true
+				log.Info("server-agent(%s#%d@%s)[HandleKnockRequest] start to verify evidence for dhp knock", knkMsg.UserId, transactionId, addrStr)
+				if s.VerifyEvidence(dhpKnkMsg.Evidence) {
+					dhpAckMsg.ErrCode = common.ErrSuccess.ErrorCode()
+				} else {
+					dhpAckMsg.ErrCode = common.ErrEvidenceVerificationFailed.ErrorCode()
+				}
+				return
+			} else {
+				err = json.Unmarshal(ppd.BodyMessage, knkMsg)
+			}
+		} else {
+			err = json.Unmarshal(ppd.BodyMessage, knkMsg)
+		}
 		if err != nil {
 			log.Error("server-agent(#%d@%s)[HandleKnockRequest] failed to parse %s message: %v", transactionId, addrStr, core.HeaderTypeToString(ppd.HeaderType), err)
 			ackMsg.ErrCode = common.ErrJsonParseFailed.ErrorCode()
@@ -75,6 +97,10 @@ func (s *UdpServer) HandleKnockRequest(ppd *core.PacketParserData) (err error) {
 
 	// send back knock ack response
 	ackBytes, _ := json.Marshal(ackMsg)
+
+	if isDHPKnock {
+		ackBytes, _ = json.Marshal(dhpAckMsg)
+	}
 
 	ackMd := &core.MsgData{
 		HeaderType:     core.NHP_ACK,

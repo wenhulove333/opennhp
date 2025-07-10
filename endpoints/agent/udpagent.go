@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -104,6 +103,8 @@ type UdpAgent struct {
 	wg      sync.WaitGroup
 	running atomic.Bool
 
+	safeTee atomic.Bool
+
 	signals struct {
 		stop                  chan struct{}
 		knockTargetStop       chan struct{}
@@ -118,6 +119,10 @@ type UdpAgent struct {
 	knockUser      *KnockUser
 	deviceId       string
 	checkResults   map[string]any
+
+	// dhp
+	smartPolicyEngine        map[string]*wasmEngine.Engine
+	decryptedZtdoRecord      map[string]string
 }
 
 type UdpConn struct {
@@ -185,12 +190,17 @@ func (a *UdpAgent) Start(dirPath string, logLevel int) (err error) {
 	a.recvMsgCh = a.device.DecryptedMsgQueue
 	a.sendMsgCh = make(chan *core.MsgData, core.SendQueueSize)
 
+	// initialize dhp related stuff
+	a.smartPolicyEngine = make(map[string]*wasmEngine.Engine)
+	a.decryptedZtdoRecord = make(map[string]string)
+
 	// start agent routines
 	a.wg.Add(2)
 	go a.sendMessageRoutine()
 	go a.recvMessageRoutine()
 
 	a.running.Store(true)
+	a.safeTee.Store(false)
 
 	time.Sleep(1000 * time.Millisecond)
 
@@ -206,6 +216,11 @@ func (a *UdpAgent) StartKnockLoop() int {
 	go a.knockResourceRoutine()
 
 	return size
+}
+
+func (a *UdpAgent) StartDHPKnockLoop() {
+	a.wg.Add(1)
+	go a.dhpKnockResourceRoutine()
 }
 
 func (a *UdpAgent) StopKnockLoop() {
@@ -603,6 +618,42 @@ func (a *UdpAgent) knockResourceRoutine() {
 	}
 }
 
+func (a *UdpAgent) dhpKnockResourceRoutine() {
+	defer a.wg.Done()
+	defer log.Info("dhpKnockResourceRoutine stopped")
+
+	log.Info("dhpKnockResourceRoutine started")
+
+	for {
+		select {
+		case <-a.signals.stop:
+			return
+		default: // don't block for knock failure
+		}
+		ackMsg, err := a.KnockDHP()
+
+		if err != nil {
+			a.safeTee.Store(false)
+
+			// if error happens wait some time (total AgentLocalTransactionResponseTimeoutMs) to retry
+			log.Error("failed to knock, error: %v", err)
+			// avoid flood attack from server side
+			time.Sleep(core.FailureRetryInterval * time.Second)
+			continue // retry knock
+		}
+
+		log.Info("knock succeeded, next knock in %d seconds", ackMsg.OpenTime)
+		a.safeTee.Store(true)
+
+		select {
+		case <-a.signals.stop:
+			return
+		case <-time.After(time.Second * time.Duration(ackMsg.OpenTime)):
+			// continue knock
+		}
+	}
+}
+
 func (a *UdpAgent) AddServer(server *core.UdpPeer) {
 	if server.DeviceType() == core.NHP_SERVER {
 		a.device.AddPeer(server)
@@ -682,46 +733,21 @@ func (a *UdpAgent) FindServerPeerFromResource(res *KnockResource) *core.UdpPeer 
 	return nil
 }
 
-//Convert ztdo file to Source file
-/**
-ztdo: Ztdo file path
-output: Decrypted file output path
-*/
-func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, ztdoId string, output string) {
-	var doId string
+func (a *UdpAgent) StartConfidentialComputing(ztdoId string, trustedApplication string, function string, params map[string]any) (any, error) {
+	var ztdoPath string
 
-	if output == "" {
-		// generate temporary file path
-		var err error
-		output, err = utils.GenerateTempFilePath("plaintext-*")
-		if err != nil {
-			fmt.Println("Error: fail to generating temporary file path:", err)
-			return
-		}
+	output, err := utils.GenerateTempFilePath("plaintext-*")
+	if err != nil {
+		return nil, fmt.Errorf("Error: fail to generating temporary file path: %w", err)
 	}
 
 	ztdo := ztdolib.NewZtdo()
-	if ztdoPath != "" {
-		if err := ztdo.ParseHeader(ztdoPath); err != nil {
-			fmt.Println("Error: parse header error:", err)
-			return
-		}
 
-		doId = ztdo.GetObjectID()
-	} else {
-		doId = ztdoId
-	}
-
-	eccType := core.ECC_SM2
-	if a.config.DefaultCipherScheme == common.CIPHER_SCHEME_CURVE {
-		eccType = core.ECC_CURVE25519
-	}
-	consumerEphemeralEcdh := core.NewECDH(eccType)
-	teePrk, _ := base64.StdEncoding.DecodeString(a.config.TEEPrivateKeyBase64)
-	teeEcdh := core.ECDHFromKey(eccType, teePrk)
+	consumerEphemeralEcdh := core.NewECDH(a.config.GetEccType())
+	teeEcdh := a.config.GetTeeEcdh()
 
 	darMsg := common.DARMsg{
-		DoId: doId,
+		DoId: ztdoId,
 		UserId: a.config.UserId,
 		TeePublicKey: teeEcdh.PublicKeyBase64(),
 		ConsumerEphemeralPublicKey: consumerEphemeralEcdh.PublicKeyBase64(),
@@ -729,70 +755,88 @@ func (a *UdpAgent) StartDecodeZtdo(ztdoPath string, ztdoId string, output string
 	serverPeer := a.GetFirstServerPeer()
 	result, dagMsg := a.SendDARMsgToServer(serverPeer, darMsg)
 	if result {
-		dataPrkWrapping := ztdolib.DataPrivateKeyWrapping{}
+		if plaintextPath, exist := a.decryptedZtdoRecord[ztdoId]; !exist {
+			dataPrkWrapping := ztdolib.DataPrivateKeyWrapping{}
 
-		if err := json.Unmarshal([]byte(dagMsg.Kao.WrappedDataKey), &dataPrkWrapping); err != nil {
-			log.Error("failed to unmarshal data private key wrapping: %v\n", err)
-			fmt.Printf("Error: failed to unmarshal data private key wrapping: %v\n", err)
-			return
-		}
+			if err := json.Unmarshal([]byte(dagMsg.Kao.WrappedDataKey), &dataPrkWrapping); err != nil {
+				log.Error("failed to unmarshal data private key wrapping: %v\n", err)
+				return nil, fmt.Errorf("failed to unmarshal data private key wrapping: %v", err)
+			}
 
-		providerPbk, _ := base64.StdEncoding.DecodeString(dataPrkWrapping.ProviderPublicKeyBase64)
+			providerPbk, _ := base64.StdEncoding.DecodeString(dataPrkWrapping.ProviderPublicKeyBase64)
 
-		if ztdoPath == "" {
 			if dagMsg.AccessUrl == "" {
 				log.Error("access url is empty, please check with data provider")
-				fmt.Println("Error: access url is empty, please check with data provider")
-				return
+				return nil, fmt.Errorf("access url is empty, please check with data provider")
 			}
 
 			var err error
 			ztdoPath, err = utils.DownloadFileToTemp(dagMsg.AccessUrl, "ztdo-")
-			defer os.Remove(filepath.Dir(ztdoPath))
-			defer os.Remove(ztdoPath)
 			if err != nil {
 				log.Error("failed to download ztdo: %v\n", err)
-				fmt.Printf("Error: failed to download ztdo: %v\n", err)
-				return
+				return nil, fmt.Errorf("failed to download ztdo: %v", err)
 			}
 
 			if err := ztdo.ParseHeader(ztdoPath); err != nil {
 				fmt.Printf("Error: failed to parse ztdo header:%s\n", err)
-				return
+				return nil, fmt.Errorf("failed to parse ztdo header:%s", err)
 			}
 
 			if ztdoId != ztdo.GetObjectID() {
 				fmt.Printf("Error: ztdo id mismatch, please check with data provider\n")
-				return
+				return nil, fmt.Errorf("ztdo id mismatch, please check with data provider")
 			}
-		}
 
-		sa := ztdolib.NewSymmetricAgreement(ztdo.GetECCMode(), false)
-		sa.SetMessagePatterns(ztdolib.DataPrivateKeyWrappingPatterns)
-		sa.SetPsk([]byte(ztdolib.InitialDHPKeyWrappingString))
-		sa.SetStaticKeyPair(teeEcdh)
-		sa.SetEphemeralKeyPair(consumerEphemeralEcdh)
-		sa.SetRemoteStaticPublicKey(providerPbk)
+			sa := ztdolib.NewSymmetricAgreement(ztdo.GetECCMode(), false)
+			sa.SetMessagePatterns(ztdolib.DataPrivateKeyWrappingPatterns)
+			sa.SetPsk([]byte(ztdolib.InitialDHPKeyWrappingString))
+			sa.SetStaticKeyPair(teeEcdh)
+			sa.SetEphemeralKeyPair(consumerEphemeralEcdh)
+			sa.SetRemoteStaticPublicKey(providerPbk)
 
-		gcmKey, ad := sa.AgreeSymmetricKey()
+			gcmKey, ad := sa.AgreeSymmetricKey()
 
-		dataPrk, _ := dataPrkWrapping.Unwrap(gcmKey[:], ad)
+			dataPrk, err := dataPrkWrapping.Unwrap(gcmKey[:], ad)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unwrap data private key: %s", err)
+			}
 
-		if ztdoPath == "" || output == "" {
-			fmt.Printf("Error: ztdo path or output is empty\n")
-			return
-		}
+			if ztdoPath == "" || output == "" {
+				return nil, fmt.Errorf("ztdo path or output is empty")
+			}
 
-		cmd := exec.Command(a.config.DHPExeCMD, "run", "--mode=decrypt", "--ztdo="+ztdoPath, "--output="+output, "--data-private-key="+dataPrk, "--provider-public-key="+dataPrkWrapping.ProviderPublicKeyBase64)
+			fmt.Printf("Data Private Key: %s\n", dataPrk)
+			fmt.Printf("Provider Public Key: %s\n", dataPrkWrapping.ProviderPublicKeyBase64)
 
-		_, err := cmd.CombinedOutput()
-		if err != nil {
-			fmt.Println("Error: fail to decrypt ztdo file with error: ", err.Error())
+			cmd := exec.Command(a.config.DHPExeCMD, "run", "--mode=decrypt", "--ztdo="+ztdoPath, "--output="+output, "--data-private-key="+dataPrk, "--provider-public-key="+dataPrkWrapping.ProviderPublicKeyBase64)
+
+			_, err = cmd.CombinedOutput()
+			if err != nil {
+				return nil, fmt.Errorf("fail to decrypt ztdo file with error: %s\n", err.Error())
+			} else {
+				a.decryptedZtdoRecord[ztdoId] = output
+			}
 		} else {
-			fmt.Println("Successfully decrypt ztdo file into", output)
+			output = plaintextPath
 		}
 	} else {
-		fmt.Printf("Error: fail to request ztdo with error: %s.\n", dagMsg.ErrMsg)
+		return nil, fmt.Errorf("Error: fail to request ztdo with error: %s.\n", dagMsg.ErrMsg)
+	}
+
+	params["path"] = output
+
+	taRes, err := a.CallTrustedApplication(trustedApplication, function, params, dagMsg.Spo.PolicyId)
+	if err != nil {
+		return nil, fmt.Errorf("fail to call trusted application with error: %s\n", err.Error())
+	} else {
+		var structResult map[string]any
+
+		err := json.Unmarshal([]byte(taRes), &structResult)
+		if err != nil {
+			return nil, fmt.Errorf("fail to unmarshal confidential computing result: %s\n", err.Error())
+		}
+
+		return structResult, nil
 	}
 }
 
@@ -971,28 +1015,37 @@ func (s *UdpAgent) onAttestationCollect(spo *common.SmartPolicy) (string, error)
 		return "", nil
 	}
 
-	wasmBytes, err := base64.StdEncoding.DecodeString(spo.Policy)
-	if err != nil {
-		wasmPath, err := utils.DownloadFileToTemp(spo.Policy, "wasm-")
-		defer os.Remove(filepath.Dir(wasmPath))
-		defer os.Remove(wasmPath)
-		if err != nil {
-			return "", err
-		}
-		wasmBytes, err = os.ReadFile(wasmPath)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	engine := wasmEngine.NewEngine()
-	err = engine.LoadWasm(wasmBytes)
-	defer engine.Close()
+	wasmBytes, err := spo.GetPolicy()
 	if err != nil {
 		return "", err
 	}
 
+	engine := wasmEngine.NewEngine()
+	err = engine.LoadWasm(wasmBytes)
+	if err != nil {
+		return "", err
+	}
+
+	s.smartPolicyEngine[spo.PolicyId] = engine
+
 	attestation := engine.OnAttestationCollect()
 
 	return attestation, nil
+}
+
+func (a *UdpAgent) CallTrustedApplication(trustedApp string, function string, params map[string]any, spoId string) (string, error) {
+	ta, err := NewTrustApplication(trustedApp)
+	if err != nil {
+		return "", err
+	}
+
+	taRes, err := ta.CallFunction(trustedApp, function, params)
+	if err != nil {
+		return "", err
+	} else {
+		resultWithPostProcess := a.smartPolicyEngine[spoId].OnDataPostprocess(taRes)
+		defer delete(a.smartPolicyEngine, spoId)
+		defer a.smartPolicyEngine[spoId].Close()
+		return resultWithPostProcess, nil
+	}
 }

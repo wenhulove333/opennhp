@@ -10,6 +10,7 @@ import (
 	"github.com/OpenNHP/opennhp/nhp/common"
 	"github.com/OpenNHP/opennhp/nhp/core"
 	ztdolib "github.com/OpenNHP/opennhp/nhp/core/ztdo"
+	"github.com/OpenNHP/opennhp/nhp/utils"
 )
 
 type DataPrivateKeyStore struct {
@@ -124,7 +125,7 @@ type AppParams struct {
 	ProviderPublicKeyBase64 string
 }
 
-func (a *AppParams) GetSmartPolicy() (common.SmartPolicy, error) {
+func (a *AppParams) NewSmartPolicy() (common.SmartPolicy, error) {
 	file, err := os.Open(a.SmartPolicy)
 	if err != nil {
 		return common.SmartPolicy{}, fmt.Errorf("could not open file: %v", err)
@@ -142,6 +143,14 @@ func (a *AppParams) GetSmartPolicy() (common.SmartPolicy, error) {
 	if err != nil {
 		return common.SmartPolicy{}, fmt.Errorf("json parsing error: %s", err)
 	}
+
+	spoId, err := utils.GenerateUUIDv4()
+	if err != nil {
+		return common.SmartPolicy{}, fmt.Errorf("error generating spoId: %v", err)
+	}
+
+	config.PolicyId = spoId
+
 	return config, nil
 }
 
@@ -156,4 +165,24 @@ func (a *AppParams) GetMetadata() (string, error) {
 	}
 
 	return string(content), nil
+}
+
+func (a *AppParams) LoadMetadataAsStruct() (map[string]any, error) {
+	var metadata map[string]any
+
+	if a.Metadata == "" {
+		return metadata, nil
+	}
+
+	content, err := os.ReadFile(a.Metadata)
+	if err != nil {
+		return metadata, nil
+	}
+
+	err = json.Unmarshal(content, &metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	return metadata, nil
 }

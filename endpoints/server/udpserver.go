@@ -91,6 +91,9 @@ type UdpServer struct {
 	dbPeerMapMutex sync.Mutex
 	dbPeerMap      map[string]*core.UdpPeer // indexed by peer's public key base64 string
 
+	teeMapMutex    sync.Mutex
+	teeMap         map[string]*TeeAttestationReport // indexed by tee's measure
+
 	// etcd client
 	etcdConn *etcd.EtcdConn
 	remoteConfigUpdateMutex sync.Mutex
@@ -121,6 +124,15 @@ type DBConn struct {
 	DBPeer         *core.UdpPeer
 	DBCipherScheme int
 	DBId           string
+}
+
+type TeeAttestationReport struct {
+	Measure        string `json:"measure"`
+	SerialNumber   string `json:"serialNumber"`
+}
+
+type TeeAttestationReports struct {
+	TEEs []*TeeAttestationReport `json:"tees"`
 }
 
 func (c *UdpConn) Close() {

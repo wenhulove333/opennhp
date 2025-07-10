@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -220,7 +221,7 @@ func runApp(params db.AppParams) error {
 	switch params.Mode {
 	case "encrypt":
 		outputFilePath := params.Output
-		smartPolicy, err := params.GetSmartPolicy()
+		smartPolicy, err := params.NewSmartPolicy()
 		if err != nil {
 			log.Error("failed to read policy file:%s\n", err)
 			return err
@@ -231,10 +232,36 @@ func runApp(params db.AppParams) error {
 		if ztdoId == "" {
 			ztdoId = ztdo.GetObjectID()
 
-			metadata, err := params.GetMetadata()
-			if err != nil {
-				log.Error("failed to read metadata file:%s\n", err)
-				return err
+			var metadata string
+
+			if smartPolicy.Embedded {
+				structMetadata, err := params.LoadMetadataAsStruct()
+				if err != nil {
+					log.Error("failed to load metadata:%s\n", err)
+					return err
+				}
+
+				wasmBytes, err := smartPolicy.GetPolicy()
+				if err != nil {
+					log.Error("failed to get policy:%s\n", err)
+					return err
+				}
+
+				structMetadata["smartPolicy"] = base64.StdEncoding.EncodeToString(wasmBytes)
+
+				metadataBytes, err := json.Marshal(structMetadata)
+				if err != nil {
+					log.Error("failed to marshal metadata:%s\n", err)
+					return err
+				}
+
+				metadata = string(metadataBytes)
+			} else {
+				metadata, err = params.GetMetadata()
+				if err != nil {
+					log.Error("failed to read metadata file:%s\n", err)
+					return err
+				}
 			}
 
 			ztdo.SetMetadata(metadata)

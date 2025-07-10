@@ -1,0 +1,6 @@
+
+{
+    "policyId": "c0a1e6ed-115c-414b-b1eb-000a4837d70d",
+    "policy": "http://172.16.3.56:8000/data/policy/allow/c0a1e6ed-115c-414b-b1eb-000a4837d70d.wasm",
+    "embedded": true
+}

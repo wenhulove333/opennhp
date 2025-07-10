@@ -1,0 +1,1922 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数场服务器管理系统</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --primary-dark: #0d47a1;
+            --secondary: #26c6da;
+            --success: #4caf50;
+            --warning: #ff9800;
+            --danger: #f44336;
+            --dark: #121826;
+            --dark-card: #1e293b;
+            --dark-text: #e2e8f0;
+            --light-text: #94a3b8;
+            --border: #2d3748;
+            --sidebar-width: 260px;
+            --header-height: 70px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--dark);
+            color: var(--dark-text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        p {
+            word-break: break-word;
+        }
+
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* 侧边导航样式 */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: rgba(18, 24, 38, 0.95);
+            border-right: 1px solid var(--border);
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+            overflow-y: auto;
+            transition: transform 0.3s ease;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo-icon {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .logo-text {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .menu {
+            padding: 20px 10px;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            padding: 14px 16px;
+            margin: 8px 0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: var(--light-text);
+            font-weight: 500;
+        }
+
+        .menu-item:hover {
+            background-color: rgba(26, 115, 232, 0.15);
+            color: var(--primary);
+        }
+
+        .menu-item.active {
+            background: linear-gradient(90deg, rgba(26, 115, 232, 0.25), transparent);
+            color: var(--primary);
+            border-left: 4px solid var(--primary);
+        }
+
+        .menu-item i {
+            margin-right: 12px;
+            font-size: 20px;
+            width: 24px;
+            text-align: center;
+        }
+
+        .menu-text {
+            font-size: 16px;
+        }
+
+        /* 主内容区样式 */
+        .main-content {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 30px;
+            height: var(--header-height);
+            background-color: rgba(18, 24, 38, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 99;
+        }
+
+        .page-title {
+            font-size: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+        }
+
+        .page-title i {
+            margin-right: 12px;
+            color: var(--secondary);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+        }
+
+        .notification {
+            position: relative;
+            margin-right: 20px;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background-color: var(--danger);
+            color: white;
+            font-size: 10px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .user-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 内容容器 */
+        .content-container {
+            padding: 30px;
+            padding-bottom: 50px;
+        }
+
+        /* 卡片样式 */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(640px, 1fr));
+            gap: 24px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background-color: var(--dark-card);
+            border-radius: 14px;
+            padding: 24px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 20px rgba(0, 0, 0, 0.25);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+        }
+
+        .card-title i {
+            margin-right: 10px;
+            color: var(--secondary);
+        }
+
+        .card-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background-color: rgba(76, 175, 80, 0.15);
+            color: var(--success);
+        }
+
+        .badge-danger {
+            background-color: rgba(244, 67, 54, 0.15);
+            color: var(--danger);
+        }
+
+        .badge-warning {
+            background-color: rgba(255, 152, 0, 0.15);
+            color: var(--warning);
+        }
+
+        /* 图表容器 */
+        .chart-container {
+            width: 100%;
+            height: 300px;
+        }
+
+        /* 表格样式 */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: rgba(30, 41, 59, 0.5);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .data-table th {
+            text-align: left;
+            padding: 16px 20px;
+            font-weight: 600;
+            color: var(--light-text);
+            background-color: rgba(30, 41, 59, 0.8);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .data-table td {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .data-table tr:hover {
+            background-color: rgba(26, 115, 232, 0.05);
+        }
+
+        /* 状态指示器 */
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-success {
+            background-color: var(--success);
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+        }
+
+        .status-danger {
+            background-color: var(--danger);
+            box-shadow: 0 0 8px rgba(244, 67, 54, 0.5);
+        }
+
+        .status-warning {
+            background-color: var(--warning);
+            box-shadow: 0 0 8px rgba(255, 152, 0, 0.5);
+        }
+
+        /* 按钮样式 */
+        .btn {
+            padding: 10px 18px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn i {
+            font-size: 16px;
+        }
+
+        .btn-sm {
+            padding: 8px 14px;
+            font-size: 14px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            box-shadow: 0 4px 6px rgba(26, 115, 232, 0.3);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 6px 10px rgba(26, 115, 232, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+        }
+
+        .btn-outline:hover {
+            background-color: rgba(26, 115, 232, 0.1);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success), #2e7d32);
+            color: white;
+            box-shadow: 0 4px 6px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn-success:hover {
+            box-shadow: 0 6px 10px rgba(76, 175, 80, 0.4);
+            transform: translateY(-2px);
+        }
+
+        /* 密钥卡片样式 */
+        .key-card {
+            background: linear-gradient(135deg, rgba(26, 115, 232, 0.1), rgba(38, 198, 218, 0.1));
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid rgba(26, 115, 232, 0.3);
+        }
+
+        .key-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .key-title {
+            font-weight: 600;
+            font-size: 17px;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .key-title i {
+            font-size: 20px;
+        }
+
+        .key-value {
+            font-family: monospace;
+            word-break: break-all;
+            margin: 15px 0;
+            padding: 15px;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            max-height: 120px;
+            overflow-y: auto;
+            line-height: 1.8;
+            font-size: 14px;
+        }
+
+        .key-actions {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .key-info {
+            font-size: 14px;
+            color: var(--light-text);
+        }
+
+        /* 表单样式 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--light-text);
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            background-color: rgba(30, 41, 59, 0.5);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--dark-text);
+            font-size: 15px;
+            transition: border 0.3s;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+        }
+
+        /* 分页 */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            margin-top: 30px;
+            gap: 10px;
+        }
+
+        .page-item {
+            padding: 8px 16px;
+            border-radius: 6px;
+            background-color: var(--dark-card);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .page-item:hover {
+            background-color: rgba(26, 115, 232, 0.1);
+        }
+
+        .page-item.active {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 1200px) {
+            .card-grid {
+                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            }
+        }
+
+        @media (max-width: 992px) {
+            .sidebar {
+                transform: translateX(-100%);
+                width: 280px;
+            }
+
+            .sidebar.active {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .mobile-toggle {
+                display: block;
+                position: fixed;
+                top: 20px;
+                left: 20px;
+                z-index: 101;
+                background: var(--primary);
+                color: white;
+                width: 40px;
+                height: 40px;
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 0 20px;
+            }
+
+            .content-container {
+                padding: 20px;
+            }
+
+            .card-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .key-actions {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .header {
+                flex-direction: column;
+                height: auto;
+                padding: 15px;
+            }
+
+            .page-title {
+                margin-bottom: 15px;
+            }
+        }
+
+        /* 页面切换动画 */
+        .page-enter-active, .page-leave-active {
+            transition: opacity 0.3s, transform 0.3s;
+        }
+
+        .page-enter, .page-leave-to {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        /* 页面标题 */
+        .section-title {
+            font-size: 22px;
+            margin: 30px 0 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-title i {
+            color: var(--secondary);
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 移动端菜单开关 -->
+        <div class="mobile-toggle" @click="toggleSidebar">
+            <i class="fas fa-bars"></i>
+        </div>
+
+        <div class="app-container">
+            <!-- 侧边导航 -->
+            <div class="sidebar" :class="{active: sidebarActive}">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <i class="fas fa-shield-alt"></i>
+                    </div>
+                    <div class="logo-text">数场服务器</div>
+                </div>
+
+                <div class="menu">
+                    <div
+                        v-for="(item, index) in menuItems"
+                        :key="index"
+                        class="menu-item"
+                        :class="{active: activePage === item.component}"
+                        @click="switchPage(item.component)"
+                    >
+                        <i :class="item.icon"></i>
+                        <span class="menu-text">{{ item.name }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主内容区 -->
+            <div class="main-content">
+                <div class="header">
+                    <div class="page-title">
+                        <i :class="currentPageIcon"></i>
+                        {{ currentPageTitle }}
+                    </div>
+                    <div class="user-info">
+                        <div class="notification">
+                            <i class="fas fa-bell"></i>
+                            <div class="notification-badge">3</div>
+                        </div>
+                        <div class="user-avatar">管理员</div>
+                    </div>
+                </div>
+
+                <!-- 内容容器 -->
+                <div class="content-container">
+                    <transition name="page" mode="out-in">
+                        <component :is="activePage"></component>
+                    </transition>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 仪表盘组件
+        const Dashboard = {
+            template: `
+                <div>
+                    <h2 class="section-title">
+                        <i class="fas fa-tachometer-alt"></i>
+                        安全状态看板
+                    </h2>
+                    <div class="card-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-server"></i>
+                                    容器安全状态
+                                </div>
+                                <div class="card-badge badge-success">安全</div>
+                            </div>
+                            <p>最新检测时间: {{ currentTime }}</p>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-database"></i>
+                                    NHP服务器认证
+                                </div>
+                                <div class="card-badge badge-success">可信</div>
+                            </div>
+                            <p>最新认证时间: {{ currentTime }}</p>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-exchange-alt"></i>
+                                    数据资源提供方认证
+                                </div>
+                                <div class="card-badge badge-danger">不可信</div>
+                            </div>
+                            <p>数据资源ID: 0786584e-9107-49db-943a-9643492935f7</p>
+                            <p>数据资源提供方公钥: 未知</p>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-exchange-alt"></i>
+                                    数据资源提供方认证
+                                </div>
+                                <div class="card-badge badge-success">可信</div>
+                            </div>
+                            <p>数据资源ID: 022cd3e5-2074-4898-a654-ae85d809d4fb, 7321fef8-2da3-4c3f-a3ba-98d32c0522cb</p>
+                            <p>数据资源提供方公钥: eS0vIogdu6hIN4ke3abWuGaLHbdj7FuWsAKUMtnopxgNQP6FS684VLd4Bbni6NcYrKqAIMEyz+vzxo9wInMe7w==</p>
+                            <p>最新认证时间: {{ currentTime }}</p>
+                        </div>
+                    </div>
+
+                    <h2 class="section-title">
+                        <i class="fas fa-chart-line"></i>
+                        资源实时监控
+                    </h2>
+                    <div class="card-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-microchip"></i>
+                                    CPU/内存/存储使用率
+                                </div>
+                                <div class="key-info">更新于: {{ currentTime }}</div>
+                            </div>
+                            <div class="chart-container" id="resourceChart"></div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-network-wired"></i>
+                                    网络I/O流量
+                                </div>
+                                <div class="key-info">更新于: {{ currentTime }}</div>
+                            </div>
+                            <div class="chart-container" id="networkChart"></div>
+                        </div>
+                    </div>
+                </div>
+            `,
+            data() {
+                return {
+                    currentTime: '',
+                    resourceChart: null,
+                    networkChart: null,
+                    resourceTimer: null,
+                    networkTimer: null
+                };
+            },
+            mounted() {
+                this.updateTime();
+                setInterval(this.updateTime, 1000);
+                this.initCharts();
+
+                // 模拟数据更新
+                this.resourceTimer = setInterval(this.updateResourceChart, 5000);
+                this.networkTimer = setInterval(this.updateNetworkChart, 3000);
+            },
+            beforeDestroy() {
+                clearInterval(this.resourceTimer);
+                clearInterval(this.networkTimer);
+            },
+            methods: {
+                updateTime() {
+                    const now = new Date();
+                    this.currentTime = now.toLocaleTimeString();
+                },
+                initCharts() {
+                    // 资源使用率图表
+                    this.resourceChart = echarts.init(document.getElementById('resourceChart'));
+                    this.updateResourceChart();
+
+                    // 网络流量图表
+                    this.networkChart = echarts.init(document.getElementById('networkChart'));
+                    this.updateNetworkChart();
+
+                    // 响应式调整
+                    window.addEventListener('resize', () => {
+                        this.resourceChart.resize();
+                        this.networkChart.resize();
+                    });
+                },
+                updateResourceChart() {
+                    const now = new Date();
+                    const minutes = now.getMinutes();
+                    const seconds = now.getSeconds();
+                    const baseTime = `${now.getHours()}:${minutes < 10 ? '0' + minutes : minutes}`;
+
+                    const option = {
+                        tooltip: {
+                            trigger: 'axis',
+                            backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                            borderColor: 'rgba(26, 115, 232, 0.5)',
+                            textStyle: {
+                                color: '#e2e8f0'
+                            }
+                        },
+                        legend: {
+                            data: ['CPU', '内存', '存储'],
+                            textStyle: {
+                                color: '#e2e8f0'
+                            },
+                            right: 10,
+                            top: 10
+                        },
+                        grid: {
+                            left: '3%',
+                            right: '4%',
+                            bottom: '3%',
+                            containLabel: true
+                        },
+                        xAxis: {
+                            type: 'category',
+                            boundaryGap: false,
+                            data: Array.from({length: 7}, (_, i) => {
+                                const min = (minutes - 6 + i) % 60;
+                                return `${now.getHours()}:${min < 10 ? '0' + min : min}`;
+                            }),
+                            axisLine: {
+                                lineStyle: {
+                                    color: '#94a3b8'
+                                }
+                            }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            max: 100,
+                            axisLine: {
+                                lineStyle: {
+                                    color: '#94a3b8'
+                                }
+                            },
+                            splitLine: {
+                                lineStyle: {
+                                    color: 'rgba(148, 163, 184, 0.1)'
+                                }
+                            }
+                        },
+                        series: [
+                            {
+                                name: 'CPU',
+                                type: 'line',
+                                smooth: true,
+                                data: Array.from({length: 7}, () => Math.floor(Math.random() * 30) + 40),
+                                lineStyle: {
+                                    color: '#1a73e8',
+                                    width: 3
+                                },
+                                symbol: 'circle',
+                                symbolSize: 8,
+                                itemStyle: {
+                                    color: '#1a73e8'
+                                }
+                            },
+                            {
+                                name: '内存',
+                                type: 'line',
+                                smooth: true,
+                                data: Array.from({length: 7}, () => Math.floor(Math.random() * 20) + 20),
+                                lineStyle: {
+                                    color: '#26c6da',
+                                    width: 3
+                                },
+                                symbol: 'circle',
+                                symbolSize: 8,
+                                itemStyle: {
+                                    color: '#26c6da'
+                                }
+                            },
+                            {
+                                name: '存储',
+                                type: 'line',
+                                smooth: true,
+                                data: Array.from({length: 7}, () => Math.floor(Math.random() * 10) + 60),
+                                lineStyle: {
+                                    color: '#4caf50',
+                                    width: 3
+                                },
+                                symbol: 'circle',
+                                symbolSize: 8,
+                                itemStyle: {
+                                    color: '#4caf50'
+                                }
+                            }
+                        ]
+                    };
+                    this.resourceChart.setOption(option);
+                },
+                updateNetworkChart() {
+                    const now = new Date();
+                    const minutes = now.getMinutes();
+                    const seconds = now.getSeconds();
+                    const baseTime = `${now.getHours()}:${minutes < 10 ? '0' + minutes : minutes}`;
+
+                    const option = {
+                        tooltip: {
+                            trigger: 'axis',
+                            backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                            borderColor: 'rgba(26, 115, 232, 0.5)',
+                            textStyle: {
+                                color: '#e2e8f0'
+                            }
+                        },
+                        legend: {
+                            data: ['接收', '发送'],
+                            textStyle: {
+                                color: '#e2e8f0'
+                            },
+                            right: 10,
+                            top: 10
+                        },
+                        grid: {
+                            left: '3%',
+                            right: '4%',
+                            bottom: '3%',
+                            containLabel: true
+                        },
+                        xAxis: {
+                            type: 'category',
+                            boundaryGap: false,
+                            data: Array.from({length: 7}, (_, i) => {
+                                const sec = (seconds - 6 + i) % 60;
+                                return `${now.getHours()}:${minutes}:${sec < 10 ? '0' + sec : sec}`;
+                            }),
+                            axisLine: {
+                                lineStyle: {
+                                    color: '#94a3b8'
+                                }
+                            }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLine: {
+                                lineStyle: {
+                                    color: '#94a3b8'
+                                }
+                            },
+                            splitLine: {
+                                lineStyle: {
+                                    color: 'rgba(148, 163, 184, 0.1)'
+                                }
+                            }
+                        },
+                        series: [
+                            {
+                                name: '接收',
+                                type: 'line',
+                                smooth: true,
+                                data: Array.from({length: 7}, () => Math.floor(Math.random() * 100) + 80),
+                                lineStyle: {
+                                    color: '#1a73e8',
+                                    width: 3
+                                },
+                                symbol: 'circle',
+                                symbolSize: 8,
+                                itemStyle: {
+                                    color: '#1a73e8'
+                                },
+                                areaStyle: {
+                                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                        { offset: 0, color: 'rgba(26, 115, 232, 0.4)' },
+                                        { offset: 1, color: 'rgba(26, 115, 232, 0.05)' }
+                                    ])
+                                }
+                            },
+                            {
+                                name: '发送',
+                                type: 'line',
+                                smooth: true,
+                                data: Array.from({length: 7}, () => Math.floor(Math.random() * 80) + 60),
+                                lineStyle: {
+                                    color: '#26c6da',
+                                    width: 3
+                                },
+                                symbol: 'circle',
+                                symbolSize: 8,
+                                itemStyle: {
+                                    color: '#26c6da'
+                                },
+                                areaStyle: {
+                                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                        { offset: 0, color: 'rgba(38, 198, 218, 0.4)' },
+                                        { offset: 1, color: 'rgba(38, 198, 218, 0.05)' }
+                                    ])
+                                }
+                            }
+                        ]
+                    };
+                    this.networkChart.setOption(option);
+                }
+            }
+        };
+
+        // 应用管理组件
+        const AppManagement = {
+            template: `
+                <div>
+                    <h2 class="section-title">
+                        <i class="fas fa-cube"></i>
+                        应用管理
+                    </h2>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fas fa-list"></i>
+                                已注册应用列表
+                            </div>
+                            <button class="btn btn-primary">
+                                <i class="fas fa-plus"></i> 注册新应用
+                            </button>
+                        </div>
+
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>应用名称</th>
+                                    <th>版本</th>
+                                    <th>描述</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>金融风控系统</td>
+                                    <td>v2.1.3</td>
+                                    <td>银行联合风控模型</td>
+                                    <td>
+                                        <button class="btn btn-outline btn-sm">
+                                            <i class="fas fa-eye"></i> 详情
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>医疗数据分析</td>
+                                    <td>v1.4.0</td>
+                                    <td>跨机构医疗数据联合分析</td>
+                                    <td>
+                                        <button class="btn btn-outline btn-sm">
+                                            <i class="fas fa-eye"></i> 详情
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>广告效果评估</td>
+                                    <td>v1.0.2</td>
+                                    <td>多方广告转化率分析</td>
+                                    <td>
+                                        <button class="btn btn-outline btn-sm">
+                                            <i class="fas fa-eye"></i> 详情
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>供应链分析</td>
+                                    <td>v1.2.0</td>
+                                    <td>多方供应链数据协同分析</td>
+                                    <td>
+                                        <button class="btn btn-outline btn-sm">
+                                            <i class="fas fa-eye"></i> 详情
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>保险精算模型</td>
+                                    <td>v3.0.1</td>
+                                    <td>联合保险精算模型</td>
+                                    <td>
+                                        <button class="btn btn-outline btn-sm">
+                                            <i class="fas fa-eye"></i> 详情
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div class="pagination">
+                            <div class="page-item active">1</div>
+                            <div class="page-item">2</div>
+                            <div class="page-item">3</div>
+                            <div class="page-item">下一页</div>
+                        </div>
+                    </div>
+
+                    <h2 class="section-title">
+                        <i class="fas fa-plus-circle"></i>
+                        应用注册
+                    </h2>
+
+                    <div class="card">
+                        <div class="form-group">
+                            <label class="form-label">应用名称</label>
+                            <input type="text" class="form-control" placeholder="请输入应用名称">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">应用描述</label>
+                            <textarea class="form-control" rows="4" placeholder="请输入应用描述"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">应用类型</label>
+                            <select class="form-control">
+                                <option>金融风控</option>
+                                <option>医疗健康</option>
+                                <option>广告分析</option>
+                                <option>供应链管理</option>
+                                <option>其他</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">上传应用文件</label>
+                            <input type="file" class="form-control">
+                        </div>
+
+                        <button class="btn btn-primary">
+                            <i class="fas fa-save"></i> 提交注册
+                        </button>
+                    </div>
+                </div>
+            `
+        };
+
+        // 任务中心组件
+        const TaskCenter = {
+            template: `
+                <div>
+                    <h2 class="section-title">
+                        <i class="fas fa-tasks"></i>
+                        任务中心
+                    </h2>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fas fa-history"></i>
+                                任务历史记录
+                            </div>
+                            <div>
+                                <button class="btn btn-outline">
+                                    <i class="fas fa-filter"></i> 筛选
+                                </button>
+                                <button class="btn btn-outline">
+                                    <i class="fas fa-download"></i> 导出
+                                </button>
+                            </div>
+                        </div>
+
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>应用名</th>
+                                    <th>API</th>
+                                    <th>开始时间</th>
+                                    <th>状态</th>
+                                    <th>耗时</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>金融风控系统</td>
+                                    <td>verify_account</td>
+                                    <td>2023-11-15 10:23:45</td>
+                                    <td>
+                                        <span class="status-indicator status-success"></span>
+                                        成功
+                                    </td>
+                                    <td>2分34秒</td>
+                                </tr>
+                                <tr>
+                                    <td>医疗数据分析</td>
+                                    <td>get_cancer_status</td>
+                                    <td>2023-11-15 11:05:12</td>
+                                    <td>
+                                        <span class="status-indicator status-success"></span>
+                                        成功
+                                    </td>
+                                    <td>1分12秒</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div class="pagination">
+                            <div class="page-item active">1</div>
+                            <div class="page-item">2</div>
+                            <div class="page-item">3</div>
+                            <div class="page-item">下一页</div>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        // 密钥管理组件
+        const KeyManagement = {
+            template: `
+                <div>
+                    <h2 class="section-title">
+                        <i class="fas fa-key"></i>
+                        密钥管理
+                    </h2>
+
+                    <div class="card">
+                        <div class="key-card">
+                            <div class="key-header">
+                                <div class="key-title">
+                                    <i class="fas fa-lock"></i>
+                                    TEE 公钥
+                                </div>
+                                <div>
+                                    <button class="btn btn-outline">
+                                        <i class="fas fa-copy"></i> 复制
+                                    </button>
+                                    <button class="btn btn-outline">
+                                        <i class="fas fa-download"></i> 下载
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="key-value">
+                                LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUE1dWZtSXJ0dHp2N0R2Y0x4a2RwVApLZitnK1l0bTd0Q2VxQnZzZ2dPc1R3M3pQdFd0eW5VbU9FQ2lQdWx6b3V5dFdRc0NlZ0V1VnF6b0tTQ0ZRcDlDd1l3bGJkCjVHd0w5Y0d0c2d0dHl2M0pNT1d5aGd0dTd0c2FkM0h3cHpudU1qTXVyR1p0M3R2Z0lEQVFBQgotLS0tLUVORCBQVUJMSUMgS0VZLS0tLS0K
+                            </div>
+                            <div class="key-actions">
+                                <button class="btn btn-primary">
+                                    <i class="fas fa-sync-alt"></i> 密钥轮换
+                                </button>
+                                <div class="key-info">上次轮换: 2023-11-10 09:30:15</div>
+                            </div>
+                        </div>
+
+                        <div class="key-card">
+                            <div class="key-header">
+                                <div class="key-title">
+                                    <i class="fas fa-lock"></i>
+                                    Agent 公钥
+                                </div>
+                                <div>
+                                    <button class="btn btn-outline">
+                                        <i class="fas fa-copy"></i> 复制
+                                    </button>
+                                    <button class="btn btn-outline">
+                                        <i class="fas fa-download"></i> 下载
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="key-value">
+                                LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF4a3J0dXJ2eG5kM0h1dWJtN3Vjcgp0dXJ3eG1kM0h1dWJtN3VjcnR1cnd4bWQzSHV1Ym03dWNydHVyd3htZDNIdXVibTd1Y3J0dXJ3eG1kM0h1dQpibTd1Y3J0dXJ3eG1kM0h1dWJtN3VjcnR1cnd4bWQzSHV1Ym03dWNydHVyd3htZDNIdXVibTd1Y3J0dXJ3Cm1kM0h1dWJtN3VjcnR1cnd4bWQzSHV1Ym03dWNydHVyd3htZDNIdXVibTd1Y3J0dXJ3eG1kM0h1dWJtN3UKY3J0dXJ3eG1kM0h1dWJtN3VjcgpJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==
+                            </div>
+                            <div class="key-actions">
+                                <button class="btn btn-primary">
+                                    <i class="fas fa-sync-alt"></i> 密钥轮换
+                                </button>
+                                <div class="key-info">上次轮换: 2023-11-12 14:20:05</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2 class="section-title">
+                        <i class="fas fa-history"></i>
+                        密钥使用记录
+                    </h2>
+
+                    <div class="card">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>操作类型</th>
+                                    <th>密钥类型</th>
+                                    <th>操作时间</th>
+                                    <th>操作者</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>密钥轮换</td>
+                                    <td>TEE</td>
+                                    <td>2023-11-10 09:30:15</td>
+                                    <td>admin</td>
+                                    <td>成功</td>
+                                </tr>
+                                <tr>
+                                    <td>密钥轮换</td>
+                                    <td>Agent</td>
+                                    <td>2023-11-12 14:20:05</td>
+                                    <td>admin</td>
+                                    <td>成功</td>
+                                </tr>
+                                <tr>
+                                    <td>密钥导出</td>
+                                    <td>TEE</td>
+                                    <td>2023-11-08 11:15:33</td>
+                                    <td>user1</td>
+                                    <td>成功</td>
+                                </tr>
+                                <tr>
+                                    <td>密钥轮换</td>
+                                    <td>TEE</td>
+                                    <td>2023-11-01 16:40:22</td>
+                                    <td>admin</td>
+                                    <td>成功</td>
+                                </tr>
+                                <tr>
+                                    <td>密钥复制</td>
+                                    <td>Agent</td>
+                                    <td>2023-10-28 10:05:47</td>
+                                    <td>user2</td>
+                                    <td>成功</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `
+        };
+
+        // 远程证明组件
+        const RemoteAttestation = {
+            template: `
+                <div>
+                    <h2 class="section-title">
+                        <i class="fas fa-certificate"></i>
+                        远程证明
+                    </h2>
+
+                    <div class="card-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-file-alt"></i>
+                                    证明报告生成
+                                </div>
+                            </div>
+
+                            <div style="margin: 20px 0; text-align: center;">
+                                <button class="btn btn-primary" style="padding: 12px 24px; font-size: 16px;">
+                                    <i class="fas fa-sync"></i> 获取当前证明
+                                </button>
+                            </div>
+
+                            <div class="card-header" style="margin-top: 30px;">
+                                <div class="card-title">
+                                    <i class="fas fa-check-circle"></i>
+                                    验证状态
+                                </div>
+                                <div class="card-badge badge-success">通过</div>
+                            </div>
+
+                            <div style="margin-top: 20px;">
+                                <p><strong>证明时间:</strong> 2023-11-15 14:35:22</p>
+                                <p><strong>验证方:</strong> NHP可信认证中心</p>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-archive"></i>
+                                    历史证明存档
+                                </div>
+                                <button class="btn btn-outline">
+                                    <i class="fas fa-download"></i> 批量导出
+                                </button>
+                            </div>
+
+                            <div style="max-height: 400px; overflow-y: auto; margin-top: 20px;">
+                                <div v-for="item in attestations" :key="item.id" class="key-card" style="margin-bottom: 15px;">
+                                    <div class="key-header">
+                                        <div class="key-title">
+                                            <i class="fas fa-file-contract"></i>
+                                            {{ item.id }}
+                                        </div>
+                                        <div class="card-badge" :class="'badge-' + item.statusClass">
+                                            {{ item.status }}
+                                        </div>
+                                    </div>
+                                    <p><strong>时间:</strong> {{ item.time }}</p>
+                                    <p><strong>验证方:</strong> {{ item.verifier }}</p>
+                                    <div style="margin-top: 10px;">
+                                        <button class="btn btn-outline btn-sm">
+                                            <i class="fas fa-eye"></i> 查看详情
+                                        </button>
+                                        <button class="btn btn-outline btn-sm">
+                                            <i class="fas fa-download"></i> 下载
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `,
+            data() {
+                return {
+                    attestations: [
+                        { id: 'AT-20231114-003', time: '2023-11-14 16:20:18', verifier: 'NHP可信认证中心', status: '通过', statusClass: 'success' },
+                        { id: 'AT-20231113-002', time: '2023-11-13 11:45:32', verifier: 'NHP可信认证中心', status: '通过', statusClass: 'success' },
+                        { id: 'AT-20231112-001', time: '2023-11-12 09:15:47', verifier: 'NHP可信认证中心', status: '失败', statusClass: 'danger' },
+                        { id: 'AT-20231110-004', time: '2023-11-10 14:30:55', verifier: 'NHP可信认证中心', status: '通过', statusClass: 'success' },
+                        { id: 'AT-20231108-002', time: '2023-11-08 10:05:12', verifier: 'NHP可信认证中心', status: '通过', statusClass: 'success' }
+                    ]
+                };
+            }
+        };
+
+        // 系统监控组件
+        const SystemMonitoring = {
+            template: `
+                <div>
+                    <h2 class="section-title">
+                        <i class="fas fa-chart-line"></i>
+                        系统监控
+                    </h2>
+
+                    <div class="card-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-tachometer-alt"></i>
+                                    容器资源配额 vs 实际使用
+                                </div>
+                            </div>
+                            <div class="chart-container" id="quotaChart"></div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-chart-bar"></i>
+                                    历史趋势分析
+                                </div>
+                                <div>
+                                    <button class="btn btn-outline btn-sm">7天</button>
+                                    <button class="btn btn-outline btn-sm">30天</button>
+                                    <button class="btn btn-primary btn-sm">90天</button>
+                                </div>
+                            </div>
+                            <div class="chart-container" id="trendChart"></div>
+                        </div>
+                    </div>
+
+                    <h2 class="section-title">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        安全事件日志
+                    </h2>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fas fa-bell"></i>
+                                实时告警设置
+                            </div>
+                            <div>
+                                <label class="switch">
+                                    <input type="checkbox" checked>
+                                    <span class="slider"></span>
+                                </label>
+                                <span style="margin-left: 10px;">告警推送</span>
+                            </div>
+                        </div>
+
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>时间</th>
+                                    <th>事件类型</th>
+                                    <th>级别</th>
+                                    <th>描述</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>2023-11-15 14:30:22</td>
+                                    <td>认证失败</td>
+                                    <td><span class="status-indicator status-danger"></span> 严重</td>
+                                    <td>数据提供方 DP-202311001 认证失败</td>
+                                    <td>未处理</td>
+                                </tr>
+                                <tr>
+                                    <td>2023-11-15 10:15:18</td>
+                                    <td>资源超限</td>
+                                    <td><span class="status-indicator status-warning"></span> 警告</td>
+                                    <td>容器内存使用超过阈值 (85%)</td>
+                                    <td>已处理</td>
+                                </tr>
+                                <tr>
+                                    <td>2023-11-14 16:40:05</td>
+                                    <td>异常访问</td>
+                                    <td><span class="status-indicator status-warning"></span> 警告</td>
+                                    <td>检测到异常API调用频率</td>
+                                    <td>已处理</td>
+                                </tr>
+                                <tr>
+                                    <td>2023-11-13 09:25:33</td>
+                                    <td>资源超限</td>
+                                    <td><span class="status-indicator status-warning"></span> 警告</td>
+                                    <td>容器CPU使用超过阈值 (90%)</td>
+                                    <td>已处理</td>
+                                </tr>
+                                <tr>
+                                    <td>2023-11-12 14:15:47</td>
+                                    <td>服务中断</td>
+                                    <td><span class="status-indicator status-danger"></span> 严重</td>
+                                    <td>Agent服务意外停止</td>
+                                    <td>已处理</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `,
+            mounted() {
+                this.initCharts();
+            },
+            methods: {
+                initCharts() {
+                    // 配额图表
+                    const quotaChart = echarts.init(document.getElementById('quotaChart'));
+                    const quotaOption = {
+                        tooltip: {
+                            trigger: 'item',
+                            formatter: '{a} <br/>{b}: {c} ({d}%)'
+                        },
+                        legend: {
+                            orient: 'vertical',
+                            right: 10,
+                            top: 'center',
+                            textStyle: {
+                                color: '#e2e8f0'
+                            }
+                        },
+                        series: [
+                            {
+                                name: 'CPU资源',
+                                type: 'pie',
+                                radius: ['50%', '70%'],
+                                avoidLabelOverlap: false,
+                                itemStyle: {
+                                    borderRadius: 10,
+                                    borderColor: '#1e293b',
+                                    borderWidth: 2
+                                },
+                                label: {
+                                    show: false,
+                                    position: 'center'
+                                },
+                                emphasis: {
+                                    label: {
+                                        show: true,
+                                        fontSize: '18',
+                                        fontWeight: 'bold'
+                                    }
+                                },
+                                labelLine: {
+                                    show: false
+                                },
+                                data: [
+                                    { value: 65, name: '已使用', itemStyle: { color: '#1a73e8' } },
+                                    { value: 35, name: '剩余', itemStyle: { color: '#2d3748' } }
+                                ]
+                            }
+                        ]
+                    };
+                    quotaChart.setOption(quotaOption);
+
+                    // 趋势图表
+                    const trendChart = echarts.init(document.getElementById('trendChart'));
+                    const trendOption = {
+                        tooltip: {
+                            trigger: 'axis',
+                            backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                            borderColor: 'rgba(26, 115, 232, 0.5)',
+                            textStyle: {
+                                color: '#e2e8f0'
+                            }
+                        },
+                        grid: {
+                            left: '3%',
+                            right: '4%',
+                            bottom: '3%',
+                            containLabel: true
+                        },
+                        xAxis: {
+                            type: 'category',
+                            boundaryGap: false,
+                            data: ['10月', '11月', '12月', '1月', '2月', '3月', '4月'],
+                            axisLine: {
+                                lineStyle: {
+                                    color: '#94a3b8'
+                                }
+                            }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLine: {
+                                lineStyle: {
+                                    color: '#94a3b8'
+                                }
+                            },
+                            splitLine: {
+                                lineStyle: {
+                                    color: 'rgba(148, 163, 184, 0.1)'
+                                }
+                            }
+                        },
+                        series: [
+                            {
+                                name: 'CPU使用率',
+                                type: 'line',
+                                stack: '总量',
+                                data: [65, 68, 72, 75, 70, 78, 82],
+                                lineStyle: {
+                                    color: '#1a73e8',
+                                    width: 3
+                                },
+                                symbol: 'circle',
+                                symbolSize: 8,
+                                itemStyle: {
+                                    color: '#1a73e8'
+                                },
+                                areaStyle: {
+                                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                        { offset: 0, color: 'rgba(26, 115, 232, 0.4)' },
+                                        { offset: 1, color: 'rgba(26, 115, 232, 0.05)' }
+                                    ])
+                                }
+                            },
+                            {
+                                name: '内存使用率',
+                                type: 'line',
+                                stack: '总量',
+                                data: [45, 50, 52, 55, 58, 60, 62],
+                                lineStyle: {
+                                    color: '#26c6da',
+                                    width: 3
+                                },
+                                symbol: 'circle',
+                                symbolSize: 8,
+                                itemStyle: {
+                                    color: '#26c6da'
+                                },
+                                areaStyle: {
+                                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                        { offset: 0, color: 'rgba(38, 198, 218, 0.4)' },
+                                        { offset: 1, color: 'rgba(38, 198, 218, 0.05)' }
+                                    ])
+                                }
+                            }
+                        ]
+                    };
+                    trendChart.setOption(trendOption);
+
+                    // 响应式调整
+                    window.addEventListener('resize', function() {
+                        quotaChart.resize();
+                        trendChart.resize();
+                    });
+                }
+            }
+        };
+
+        // 设置中心组件
+        const Settings = {
+            template: `
+                <div>
+                    <h2 class="section-title">
+                        <i class="fas fa-cog"></i>
+                        设置中心
+                    </h2>
+
+                    <div class="card-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-user"></i>
+                                    用户管理
+                                </div>
+                                <button class="btn btn-primary">
+                                    <i class="fas fa-plus"></i> 添加用户
+                                </button>
+                            </div>
+
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>用户名</th>
+                                        <th>角色</th>
+                                        <th>邮箱</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>admin</td>
+                                        <td>管理员</td>
+                                        <td>admin@example.com</td>
+                                        <td>
+                                            <span class="status-indicator status-success"></span>
+                                            启用
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-outline btn-sm">
+                                                <i class="fas fa-edit"></i> 编辑
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>user1</td>
+                                        <td>操作员</td>
+                                        <td>user1@example.com</td>
+                                        <td>
+                                            <span class="status-indicator status-success"></span>
+                                            启用
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-outline btn-sm">
+                                                <i class="fas fa-edit"></i> 编辑
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>user2</td>
+                                        <td>审计员</td>
+                                        <td>user2@example.com</td>
+                                        <td>
+                                            <span class="status-indicator status-success"></span>
+                                            启用
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-outline btn-sm">
+                                                <i class="fas fa-edit"></i> 编辑
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>guest</td>
+                                        <td>访客</td>
+                                        <td>guest@example.com</td>
+                                        <td>
+                                            <span class="status-indicator status-danger"></span>
+                                            禁用
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-outline btn-sm">
+                                                <i class="fas fa-edit"></i> 编辑
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="fas fa-network-wired"></i>
+                                    网络设置
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">HTTPS 证书</label>
+                                <input type="file" class="form-control">
+                                <div class="key-info" style="margin-top: 8px;">当前证书有效期至: 2024-12-31</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">NHP服务器域名</label>
+                                <input type="text" class="form-control" placeholder="服务器域名" value="nhp.securecompute.com">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">NHP服务器IP</label>
+                                <input type="text" class="form-control" placeholder="服务器IP" value="118.178.58.20">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">NHP服务器公钥</label>
+                                <input type="text" class="form-control" placeholder="服务器IP" value="uyQ8gnLn+BULCxYPgT7vC5xWR02bcT8iMqr7G78oNi1lJ1k5awDnhbEldRnFifmlyL4ytha+XGPAoaNPTHic0A==">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">配置NHP服务器公钥过期时间</label>
+                                <input type="datetime-local" class="form-control" placeholder="选择过期时间" value="">
+                                <small class="form-text text-muted">设置公钥的失效时间</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">NHP服务器端口</label>
+                                <input type="number" class="form-control" value="62206">
+                            </div>
+
+                            <button class="btn btn-success">
+                                <i class="fas fa-save"></i> 保存配置
+                            </button>
+                        </div>
+                    </div>
+
+                    <h2 class="section-title">
+                        <i class="fas fa-clipboard-list"></i>
+                        审计日志
+                    </h2>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fas fa-history"></i>
+                                用户操作历史
+                            </div>
+                            <div>
+                                <button class="btn btn-outline">
+                                    <i class="fas fa-filter"></i> 筛选
+                                </button>
+                                <button class="btn btn-primary">
+                                    <i class="fas fa-download"></i> 导出日志
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style="margin: 20px 0;">
+                            <div class="key-info">日志保留策略: 保留最近180天日志</div>
+                        </div>
+
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>时间</th>
+                                    <th>用户</th>
+                                    <th>操作</th>
+                                    <th>对象</th>
+                                    <th>结果</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>2023-11-15 14:25:18</td>
+                                    <td>admin</td>
+                                    <td>密钥轮换</td>
+                                    <td>TEE公钥</td>
+                                    <td>成功</td>
+                                </tr>
+                                <tr>
+                                    <td>2023-11-15 10:30:45</td>
+                                    <td>user1</td>
+                                    <td>应用注册</td>
+                                    <td>金融风控系统</td>
+                                    <td>成功</td>
+                                </tr>
+                                <tr>
+                                    <td>2023-11-14 16:15:22</td>
+                                    <td>admin</td>
+                                    <td>系统配置更新</td>
+                                    <td>网络设置</td>
+                                    <td>成功</td>
+                                </tr>
+                                <tr>
+                                    <td>2023-11-14 09:40:33</td>
+                                    <td>user2</td>
+                                    <td>数据导出</td>
+                                    <td>任务历史</td>
+                                    <td>成功</td>
+                                </tr>
+                                <tr>
+                                    <td>2023-11-13 14:20:05</td>
+                                    <td>admin</td>
+                                    <td>用户管理</td>
+                                    <td>禁用guest账户</td>
+                                    <td>成功</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `
+        };
+
+        // Vue实例
+        new Vue({
+            el: '#app',
+            components: {
+                Dashboard,
+                AppManagement,
+                TaskCenter,
+                KeyManagement,
+                RemoteAttestation,
+                SystemMonitoring,
+                Settings
+            },
+            data: {
+                activePage: 'Dashboard',
+                sidebarActive: false,
+                menuItems: [
+                    { name: '仪表盘', component: 'Dashboard', icon: 'fas fa-tachometer-alt' },
+                    { name: '应用管理', component: 'AppManagement', icon: 'fas fa-cube' },
+                    { name: '任务中心', component: 'TaskCenter', icon: 'fas fa-tasks' },
+                    { name: '密钥管理', component: 'KeyManagement', icon: 'fas fa-key' },
+                    { name: '远程证明', component: 'RemoteAttestation', icon: 'fas fa-certificate' },
+                    { name: '系统监控', component: 'SystemMonitoring', icon: 'fas fa-chart-line' },
+                    { name: '设置中心', component: 'Settings', icon: 'fas fa-cog' }
+                ]
+            },
+            computed: {
+                currentPageTitle() {
+                    const item = this.menuItems.find(item => item.component === this.activePage);
+                    return item ? item.name : '数场服务器管理系统';
+                },
+                currentPageIcon() {
+                    const item = this.menuItems.find(item => item.component === this.activePage);
+                    return item ? item.icon : 'fas fa-shield-alt';
+                }
+            },
+            methods: {
+                switchPage(page) {
+                    this.activePage = page;
+                    this.sidebarActive = false; // 在移动端点击后自动关闭侧边栏
+                },
+                toggleSidebar() {
+                    this.sidebarActive = !this.sidebarActive;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

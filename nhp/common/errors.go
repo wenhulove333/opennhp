@@ -120,4 +120,6 @@ var (
 	// db
 	ErrTEENotAuthorized = newError("55001", "TEE is  not authorized", "可信执行环境未授权")
 	ErrDataPrivateKeyStore = newError("55002", "data private key store error", "数据私钥存储错误")
+	ErrEvidenceVerificationFailed = newError("55003", "remote attestation verification failed", "远程证明验证失败")
+	ErrEvidenceGetFailed = newError("55004", "failed to get evidence", "无法获取远程证明")
 )

@@ -407,7 +407,7 @@ func (s *UdpServer) HandleDHPDAVMessage(ppd *core.PacketParserData) (err error) 
 		dbConn, found := s.dbConnectionMap[config.DbId]
 		if !found {
 			log.Critical("dbConn not found for dbId:%s", config.DbId)
-			err = common.ErrInvalidInput
+			err = common.ErrDBOffline
 			dagMsg.ErrCode = 1
 			dagMsg.ErrMsg = err.Error()
 		} else {

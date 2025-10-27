@@ -64,6 +64,8 @@ func (a *UdpAgent) CreateDHPWebConsole() {
 	router.GET(fmt.Sprintf("%s/%s", serviceApiPrefix, "attestation/tee"), a.getTeeAttestation)
 
 	router.POST(fmt.Sprintf("%s/%s", taApiPrefix, "register"), a.registerTAService)
+	router.GET(fmt.Sprintf("%s/%s", taApiPrefix, "supported/functions"), a.GetAllSupportedFunctions)
+
 
 	// Dynamic route handler - this catches all requests and checks our dynamic routes
 	router.NoRoute(func(c *gin.Context) {
@@ -179,6 +181,11 @@ func (a *UdpAgent) registerTAService(c *gin.Context) {
 	a.addTARoute(ta)
 
 	c.JSON(http.StatusOK, ta.GetSupportedFunctions())
+}
+
+func (a *UdpAgent) GetAllSupportedFunctions(c *gin.Context) {
+	functions := GetAllSupportedFunctions()
+	c.JSON(http.StatusOK, functions)
 }
 
 func (a *UdpAgent) addTARoute(ta *TrustedApplication) {

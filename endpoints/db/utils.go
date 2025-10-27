@@ -64,12 +64,15 @@ func (d *DataPrivateKeyStore) Generate(mode ztdolib.DataKeyPairECCMode) (private
 func (d *DataPrivateKeyStore) Save(doId string) error {
 	// Make sure the etc directory exists
 	etcDir := "etc/ztdo"
-	if err := os.MkdirAll(etcDir, 0755); err != nil {
+
+	prkPath := filepath.Join(common.ExeDirPath, etcDir)
+
+	if err := os.MkdirAll(prkPath, 0755); err != nil {
 		return fmt.Errorf("failed to create etc directory: %v", err)
 	}
 
 	fileName := "data-key-" + doId + ".json"
-	fullPath := filepath.Join(common.ExeDirPath, etcDir, fileName)
+	fullPath := filepath.Join(prkPath, fileName)
 	if _, err := os.Stat(fullPath); err == nil {
 		return fmt.Errorf("%v already exists, please delete it first", fullPath)
 	}

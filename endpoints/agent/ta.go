@@ -164,3 +164,16 @@ func (ta *TrustedApplication) CallFunction(function string, params map[string]an
 			return "", fmt.Errorf("unexpected content type: %T", callResponse.Content[0])
 	}
 }
+
+func GetAllSupportedFunctions() []TAFunction {
+	bufferedTaLock.Lock()
+	defer bufferedTaLock.Unlock()
+
+	var functions []TAFunction
+	for _, methodRoutes := range bufferedTaMap {
+		functions = append(functions, methodRoutes.Functions...)
+	}
+
+	return functions
+}
+
